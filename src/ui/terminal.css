@@ -1,0 +1,583 @@
+/* INFINITY // terminal — phosphor CRT skin, dark & light mono themes */
+:root,
+:root[data-theme="dark"] {
+  --bg: #050805;
+  --panel: #081108;
+  --fg: #39ff6e;
+  --dim: #1d8a3f;
+  --dimmer: #0e4a20;
+  --crit: #ff5555;
+  --amber: #ffb000;
+  --glow: rgba(57, 255, 110, 0.45);
+  --scan: rgba(0, 0, 0, 0.22);
+  --vignette: rgba(0, 0, 0, 0.55);
+  --hover-bg: rgba(57, 255, 110, 0.08);
+}
+
+:root[data-theme="light"] {
+  --bg: #f4f4f0;
+  --panel: #fbfbf8;
+  --fg: #1a1a18;
+  --dim: #6b6b64;
+  --dimmer: #c9c9c0;
+  --crit: #c22f2f;
+  --amber: #8a6d1a;
+  --glow: transparent;
+  --scan: rgba(0, 0, 0, 0.04);
+  --vignette: rgba(0, 0, 0, 0.12);
+  --hover-bg: rgba(0, 0, 0, 0.05);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+  font-size: 14px;
+  text-shadow: 0 0 6px var(--glow);
+}
+
+/* CRT scanlines + vignette */
+.crt {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh; /* dynamic viewport: mobile browser chrome aware */
+  display: grid;
+  grid-template-areas:
+    "header header"
+    "shop right";
+  grid-template-rows: auto 1fr;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 8px;
+  padding: 8px;
+  padding-left: max(8px, env(safe-area-inset-left));
+  padding-right: max(8px, env(safe-area-inset-right));
+  padding-top: max(8px, env(safe-area-inset-top));
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+}
+
+.crt::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    var(--scan) 0px,
+    var(--scan) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  z-index: 50;
+}
+
+.crt::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 60%, var(--vignette) 100%);
+  z-index: 51;
+}
+
+.panel {
+  border: 1px solid var(--dimmer);
+  background: var(--panel);
+  padding: 8px 10px;
+  overflow: auto;
+}
+
+.panel-title {
+  color: var(--dim);
+  margin-bottom: 6px;
+  letter-spacing: 1px;
+}
+
+.header {
+  grid-area: header;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.header-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.title {
+  color: var(--amber);
+  font-weight: bold;
+}
+
+.alpha-line .alpha {
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.crit {
+  color: var(--crit);
+  animation: blink 0.8s steps(2) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.2;
+  }
+}
+
+/* ε₀ approach glitch: RGB split + jitter, driven by data-approach */
+.alpha.glitch {
+  animation: jitter 0.15s infinite;
+}
+
+.alpha.glitch[data-approach="1"] {
+  animation-duration: 0.07s;
+}
+
+@keyframes jitter {
+  0% {
+    text-shadow: 2px 0 rgba(255, 85, 85, 0.7), -2px 0 rgba(85, 255, 255, 0.7);
+    transform: translateX(0);
+  }
+  25% {
+    text-shadow: -2px 0 rgba(255, 85, 85, 0.7), 2px 0 rgba(85, 255, 255, 0.7);
+    transform: translateX(1px);
+  }
+  50% {
+    text-shadow: 1px 0 rgba(255, 85, 85, 0.7), -1px 0 rgba(85, 255, 255, 0.7);
+    transform: translateX(-1px);
+  }
+  75% {
+    text-shadow: -1px 1px rgba(255, 85, 85, 0.7), 1px -1px rgba(85, 255, 255, 0.7);
+    transform: translateX(0.5px);
+  }
+}
+
+.shop {
+  grid-area: shop;
+}
+
+.right {
+  grid-area: right;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.stats {
+  flex: 0 0 auto;
+}
+
+.notice {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-left: 3px solid var(--amber);
+  color: var(--amber);
+  white-space: pre-wrap;
+}
+
+.codexpanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.codex-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.codex-term.active {
+  border-color: var(--amber);
+  color: var(--amber);
+}
+
+.codex-text {
+  line-height: 1.7;
+  white-space: pre-wrap;
+  border-top: 1px dashed var(--dimmer);
+  padding-top: 8px;
+}
+
+button {
+  background: transparent;
+  border: 1px solid var(--dimmer);
+  color: var(--fg);
+  font: inherit;
+  padding: 4px 10px;
+  cursor: pointer;
+  text-align: left;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--fg);
+  background: var(--hover-bg);
+}
+
+button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  justify-content: space-between;
+}
+
+.row .fill {
+  flex: 1;
+}
+
+.row.locked {
+  color: var(--dimmer);
+  border: 1px dashed var(--dimmer);
+}
+
+.mini {
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.cost {
+  color: var(--amber);
+}
+
+.bar {
+  height: 8px;
+  border: 1px solid var(--dimmer);
+  margin: 4px 0 8px;
+}
+
+.bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--dim), var(--crit));
+  transition: width 0.3s;
+}
+
+.prestige {
+  width: 100%;
+  text-align: center;
+  color: var(--amber);
+  border-color: var(--amber);
+  margin-bottom: 6px;
+}
+
+.prestige:disabled {
+  color: var(--dim);
+  border-color: var(--dimmer);
+}
+
+.save-row {
+  display: flex;
+  gap: 6px;
+}
+
+.theme-toggle {
+  margin-left: auto;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+:root[data-theme="dark"] .modal {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.modal-box {
+  max-width: 640px;
+  width: min(640px, 92vw);
+  padding: 16px 20px;
+}
+
+.modal-box.wide {
+  max-width: 820px;
+  width: min(820px, 94vw);
+}
+
+.axiom-row {
+  display: flex;
+  gap: 12px;
+}
+
+.axiom-card {
+  flex: 1;
+  padding: 12px;
+  border-color: var(--dim);
+}
+
+.axiom-card:hover {
+  border-color: var(--amber);
+}
+
+.axiom-name {
+  color: var(--amber);
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.axiom-desc {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.code-area {
+  width: 100%;
+  height: 110px;
+  background: transparent;
+  border: 1px solid var(--dimmer);
+  color: var(--fg);
+  font: inherit;
+  font-size: 11px;
+  padding: 6px;
+  resize: vertical;
+  word-break: break-all;
+}
+
+.dialog-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* era dashboard */
+.meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.wall-desc {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dim);
+  margin: 6px 0;
+  border-left: 3px solid var(--dimmer);
+  padding-left: 8px;
+}
+
+.omega-row {
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.omega-val {
+  color: var(--fg);
+}
+
+.roadmap {
+  border-top: 1px dashed var(--dimmer);
+  margin-top: 6px;
+  padding-top: 6px;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.roadmap-item.done {
+  color: var(--dim);
+}
+
+.roadmap-item.current {
+  color: var(--amber);
+}
+
+.row.alpha.own {
+  border-color: var(--dim);
+}
+
+.row.alpha .own-tag {
+  color: var(--dim);
+}
+
+/* mobile: stack the grid, everything full width */
+@media (max-width: 720px) {
+  body {
+    font-size: 13px;
+  }
+
+  .crt {
+    grid-template-areas:
+      "header"
+      "shop"
+      "right";
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr;
+    padding: 6px;
+    gap: 6px;
+  }
+
+  .alpha-line .alpha {
+    font-size: 15px;
+    word-break: break-all;
+  }
+
+  .axiom-row {
+    flex-direction: column;
+  }
+
+  .codex-list {
+    max-height: 30vh;
+    overflow: auto;
+  }
+
+  .panel {
+    max-height: none;
+  }
+}
+
+/* coarse pointers (touch): larger tap targets */
+@media (pointer: coarse) {
+  button {
+    padding: 8px 12px;
+    min-height: 36px;
+  }
+
+  .mini {
+    padding: 6px 10px;
+    min-height: 32px;
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Native shells: Tauri desktop & Capacitor mobile                     */
+/* ------------------------------------------------------------------ */
+
+html {
+  overscroll-behavior: none; /* no pull-to-refresh / rubber-banding */
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  -webkit-tap-highlight-color: transparent; /* no blue tap flash */
+  touch-action: manipulation; /* kill the 300ms double-tap delay */
+}
+
+/* game controls are never text-selection targets… */
+button {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* …but the save-code box must stay copyable */
+.modal-box textarea,
+.modal-box input {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+@media (max-width: 720px) {
+  .crt {
+    padding-left: max(6px, env(safe-area-inset-left));
+    padding-right: max(6px, env(safe-area-inset-right));
+    padding-top: max(6px, env(safe-area-inset-top));
+    padding-bottom: max(6px, env(safe-area-inset-bottom));
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Leaderboard — rendered only when a server deployment answered the  */
+/* probe; static hosts never show this panel.                           */
+/* ------------------------------------------------------------------ */
+
+.lbpanel {
+  flex: 0 0 auto;
+}
+
+.lb-submit {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.lb-name {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--dimmer);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 8px;
+}
+
+.lb-name:focus {
+  outline: 1px solid var(--dim);
+  border-color: var(--dim);
+}
+
+.lb-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 230px;
+  overflow: auto;
+}
+
+.lb-row {
+  display: grid;
+  grid-template-columns: 3.5ch 1fr auto;
+  gap: 0 6px;
+  padding: 3px 0;
+  border-bottom: 1px dotted var(--dimmer);
+  font-size: 12px;
+}
+
+.lb-row:last-child {
+  border-bottom: none;
+}
+
+.lb-row.self {
+  color: var(--amber);
+}
+
+.lb-pos {
+  text-align: right;
+}
+
+.lb-rank {
+  text-align: right;
+}
+
+.lb-meta {
+  grid-column: 2 / 4;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.lb-foot {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@media (max-width: 720px) {
+  .lb-list {
+    max-height: 40vh;
+  }
+}

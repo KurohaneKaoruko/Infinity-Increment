@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "INFINITY",
+  "version": "0.1.0",
+  "identifier": "app.infinity.terminal",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "INFINITY // terminal",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 600,
+        "resizable": true,
+        "center": true,
+        "theme": "Dark",
+        "dragDropEnabled": false,
+        "devtools": true
+      }
+    ],
+    "security": {
+      "csp": null
+    },
+    "withGlobalTauri": false
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["all"],
+    "category": "Game",
+    "publisher": "INFINITY terminal",
+    "copyright": "",
+    "shortDescription": "Terminal-style ordinal incremental game",
+    "longDescription": "Push ordinals from 1 to the absolute infinite Ω: Cantor normal form, the Veblen hierarchy, ψ collapses, the aleph ladder and an endless large-cardinal era chain. Fully offline, single-file web build inside a native shell.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ]
+  }
+}
