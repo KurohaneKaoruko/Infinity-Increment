@@ -71,7 +71,7 @@ npm run worker:deploy                          # = vite build && wrangler deploy
 
 | 字段 | 值 | 说明 |
 |---|---|---|
-| `name` | `infinity-terminal` | Worker 名,部署后 `<name>.<你的子域>.workers.dev` |
+| `name` | `infinity-increment` | Worker 名,部署后 `<name>.<你的子域>.workers.dev` |
 | `main` | `worker/index.ts` | 入口:命中 `/api/leaderboard` 走共享 handler,其余回退 `index.html` |
 | `compatibility_date` | 日期 | Workers 运行时兼容日期 |
 | `kv_namespaces[0].binding` | `LEADERBOARD` | 代码里 `env.LEADERBOARD` 只认这个名字 |
