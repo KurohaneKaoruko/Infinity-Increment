@@ -1,16 +1,18 @@
 {
   // Cloudflare Worker: 排行榜 API + 单文件游戏静态托管一体。
   // 部署:npm run worker:deploy  (= vite build && wrangler deploy)
-  // (namespace id 不是机密,可以直接提交进仓库;密钥型绑定才用 wrangler secret put)
   "name": "infinity-increment",
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-01",
 
   // 排行榜存储:代码里只认 env.LEADERBOARD 这个 binding 名。
+  // 刻意不写 id —— 交给自动供给(automatic provisioning):
+  //   * Git 构建(dashboard 部署):自动创建 namespace,id 只存在于 dashboard,
+  //     不会写回仓库 → 仓库里零 id;
+  //   * 本地 `wrangler deploy`:同样自动创建,但会把真实 id 写回本文件。
   "kv_namespaces": [
     {
-      "binding": "LEADERBOARD",
-      "id": "6d106c8146b4464588067e2eaeee4302"
+      "binding": "LEADERBOARD"
     }
   ],
 

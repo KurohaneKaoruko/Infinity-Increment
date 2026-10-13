@@ -62,10 +62,14 @@ npm start                     # = npm run build && npm run serve
 **推荐 · Workers**(参数全在 `wrangler.jsonc`,dashboard 零操作):
 
 ```bash
-npx wrangler kv namespace create leaderboard   # 首次:复制返回的 id
-# 粘贴进 wrangler.jsonc 的 kv_namespaces[0].id
-npm run worker:deploy                          # = vite build && wrangler deploy
+npm run worker:deploy        # = vite build && wrangler deploy
 ```
+
+KV namespace **不需要预先创建、也不需要写 id**:配置里只声明 binding,`wrangler deploy`
+会走[自动供给](https://developers.cloudflare.com/workers/wrangler/configuration/#automatic-provisioning)
+自动创建 namespace。本地 CLI 部署会把真实 id 写回 `wrangler.jsonc`;而 Git 构建
+(dashboard 部署)创建的 namespace,id 只存在于 dashboard、**不会写回仓库**——
+所以仓库里可以完全没有 id。
 
 `wrangler.jsonc` 字段:
 
@@ -75,8 +79,12 @@ npm run worker:deploy                          # = vite build && wrangler deploy
 | `main` | `worker/index.ts` | 入口:命中 `/api/leaderboard` 走共享 handler,其余回退 `index.html` |
 | `compatibility_date` | 日期 | Workers 运行时兼容日期 |
 | `kv_namespaces[0].binding` | `LEADERBOARD` | 代码里 `env.LEADERBOARD` 只认这个名字 |
-| `kv_namespaces[0].id` | 创建 namespace 时返回 | 直接填;**id 不是机密**,可提交仓库 |
+| `kv_namespaces[0].id` | *省略* | 留空即自动供给;本地部署后 wrangler 会把真实 id 写回本文件 |
 | `assets.directory` | `dist` | Vite 产物;静态文件由运行时先行匹配,未命中的才进 Worker |
+
+> 注意:绑定的唯一来源是 `wrangler.jsonc`——官方明确建议"用 wrangler 就不要在
+> dashboard 改 Worker 配置";dashboard 里手动加的绑定在下次部署时会被覆盖
+> (新版 wrangler 会先警告并提示写回本地配置)。
 
 请求流:静态文件由 assets 层直接响应;未命中文件的请求进 Worker——
 `/api/leaderboard` 走排行榜 handler(响应头已带 `no-store`),其他路径回退
@@ -134,6 +142,44 @@ npm run mobile:open:android
 npm run icons           # 重新生成 src-tauri/icons、public/、resources/ 全套
 npm run icons:check     # 只校验存在性
 ```
+
+## 玩法:运算阶梯 → 纪元链
+
+游戏不是「看着数字变大」,而是**沿着运算本身往上爬**。数值从不以量级存储,只以
+`(级号, 进度)` 存储,记号由这一对推导出来 —— `10↑↑↑↑1000` 写都写不下来,更别说存进浮点。
+
+```
+第 1–8 级   有限超运算(基 10)
+   运算    +      ×       ^       ↑↑       ↑↑↑      ↑↑↑↑     ↑↑↑↑↑     箭头层数
+   读数    n      10·n    10^n    10↑↑n    10↑↑↑n   10↑↑↑↑n  10↑↑↑↑↑n  10↑^k 3
+   ── 破级 ──  高德纳箭头用尽(k 本身要被「算」而不是被「写」)→ ω
+第 9–13 级  同一个阶梯架在 ω 上
+   运算    ω+     ω·      ω^      ω↑↑      φ(k,0)
+   读数    ω+n    ω·n     ω^n     ω↑↑n     φ(k,0)
+   ── 破级 ──  sup φ(k,0) = Γ₀,二元 Veblen 用尽 → 纪元链接手
+纪元 II–IV  Madore ψ → 阿列夫 ℵ → 大基数无尽阶梯
+```
+
+**每一级的记号必须与它自己的运算同名** —— 加法下一级是乘法(`10·n`),乘法下一级是乘方
+(`10^n`),乘方下一级是迭代幂次(`10↑↑n`)。记号错位一格会让阶梯读起来像「加法指向乘方」。
+
+- **每一级是一种记号,不是一个更大的数**。破级瞬间旧记号再也表示不了新数值,为此造出的
+  机器**全部报废** —— 它们算不动新一级的数。爬升因此是一连串台阶,而不是平滑曲线。
+- **计数跨级连续**:破级只换「施加哪种运算」,不重置计数。所以「加法」数到 1,800 之后,
+  「乘法」的读数从 `10·1,800` 起,而不是从 `10·0 = 0` 重来 —— 读数永不倒退。
+- **仪表读数 = 记号里的那个 n**:进度条上的「6,250 / 9,987」正好对应读数 `10↑↑6,250`
+  (`rungArgument` / `rungArgumentMax` 与 `renderRung` 共用同一个自变量)。
+- **货币不参与运算**,它只是算力预算:决定你能同时部署几台机器。机器推进当前这一级的进度,
+  进度填满 → 破级。
+- **到 Γ₀ 约 70 分钟**(13 级,单级 4.5 → 8.0 分钟,逐级变难)。商店是加速器,不是必需品。
+
+**为什么 ω 侧只有 5 级?** 箭头在 ω 上会**塌缩**:`ω↑↑↑n = ω↑↑ε₀ = ε₀`(ε₀ 是 `ξ↦ω^ξ` 的
+不动点,再多箭头也推不动)。所以 ω 之上「多一个箭头」不再是重复运算,而是**多取一次不动点** ——
+阶梯换成 Veblen 层级 `φ(1,0)=ε₀`、`φ(2,0)=ζ₀`、`φ(3,0)=η₀`…… 指标 k 自己往上爬,
+`sup φ(k,0) = Γ₀` 就是这条阶梯的尽头。
+
+平衡常量全部集中在 `src/core/game/ops.ts` 顶部与 `src/core/game/config.ts`;
+节奏由 `src/core/game/sim.test.ts` 的贪心策略模拟守护。
 
 ## 序数引擎(src/core/ordinal)
 

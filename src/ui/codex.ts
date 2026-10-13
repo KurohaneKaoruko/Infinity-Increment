@@ -32,6 +32,48 @@ export const CODEX: CodexEntry[] = [
     text: "第一个满足 ω^ε₀ = ε₀ 的序数(ω 的第一个不动点)。CNF 只能表示 ε₀ 之下的序数——逼近它时,显示会开始崩溃。这不是 bug,是表示法的极限,也是转生的召唤。",
   },
   {
+    id: "hyperoperation",
+    title: "超运算 (Hyperoperation)",
+    aliases: ["hyperoperation", "超运算", "uparrow", "箭头"],
+    text: "把「重复上一级」这件事本身当作一级运算,就得到超运算阶梯:后继(0级)→ 加法 → 乘法 → 乘方 → 迭代幂次(↑↑)→ 五级超运算(↑↑↑)→ …… 每一级都只是「把上一级重复很多次」。游戏的有限阶段就是它 —— 从加法一路走到「箭头个数本身开始增长」。",
+  },
+  {
+    id: "knuth",
+    title: "高德纳上箭头 (Knuth's up-arrow)",
+    aliases: ["knuth", "up-arrow", "uparrow-notation", "高德纳", "上箭头"],
+    text: "a↑b = a^b,a↑↑b 是迭代幂次,a↑↑↑b 是五级超运算…… 箭头个数 k 就是超运算的级号。它是「把写不下的数写下来」的最后一件工具:一旦连 k 本身都大到需要被计算而不是被书写(写作 a↑^k b),箭头记号就用尽了 —— 再往上不是更大的数,而是第一个无穷序数 ω。",
+  },
+  {
+    id: "tetration",
+    title: "迭代幂次 (Tetration, ↑↑)",
+    aliases: ["tetration", "迭代幂次", "power-tower", "tower"],
+    text: "乘方之上的下一级:10↑↑n 是「把 10 的指数塔垒到 n 层」。10↑↑3 = 10^(10^10),10↑↑4 的指数塔就已经没法写下来了。它增长得太快,以至于「写出来」这件事本身先失效 —— 而这只是有限阶段的第四级,后面还有五级、六级……直到箭头用尽。",
+  },
+  {
+    id: "graham",
+    title: "葛立恒数 (Graham's number)",
+    aliases: ["graham", "葛立恒", "grahams-number", "g64"],
+    text: "曾经被写进《吉尼斯世界纪录》的「最大数学用数」:用 64 层箭头定义,每层箭头的数量由上一层给出。它的十进制写法所需的空间超过可观测宇宙——所以数学家用箭头记号,而不是数字。当你的阶梯走到 ↑↑↑↑ 也写不下时,你面对的是同一堵墙。",
+  },
+  {
+    id: "mutation",
+    title: "破级突变 (Notation mutation)",
+    aliases: ["mutation", "破级", "突变", "level-up"],
+    text: "每一级阶梯的终点不是「更大的数」,而是「换一种写法」。破级瞬间,旧记号再也表示不了新数值,为此造出的机器也全部报废——它们算不动新一级的数。所以爬升不是数值的平滑增长,而是一连串台阶:每一级都要从头重建算力。",
+  },
+  {
+    id: "fixedpoint",
+    title: "不动点 (Fixed point)",
+    aliases: ["fixedpoint", "fixed-point", "不动点"],
+    text: "α 是函数 f 的不动点,当 f(α) = α。ε₀ 就是 ω^ξ 的最小不动点:把 ω 的指数塔垒到无穷高,极限恰好落回它自己。每一步阶梯的尽头都是某个不动点——这就是为什么「再往上爬一级」有时会突然换掉整记号系统。",
+  },
+  {
+    id: "fixpointladder",
+    title: "不动点层级 φ(k,0)",
+    aliases: ["fixpoint-ladder", "不动点层级", "phik0", "epsilon-numbers"],
+    text: "箭头在 ω 上会塌缩:ω↑↑↑n 并不比 ε₀ 更大(ε₀ 是 ξ↦ω^ξ 的不动点)。所以 ω 之上「多一个箭头」不再是重复运算,而是「多取一次不动点」—— 阶梯换成了 Veblen 层级 φ(1,0)=ε₀、φ(2,0)=ζ₀、φ(3,0)=η₀…… 指标 k 自己往上爬,而 sup φ(k,0) = Γ₀ 就是这条阶梯的尽头。",
+  },
+  {
     id: "cofinality",
     title: "Cofinality (共尾性)",
     aliases: ["cofinality", "cofinal", "共尾", "cf"],

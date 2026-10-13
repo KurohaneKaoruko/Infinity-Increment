@@ -7,10 +7,13 @@
  *
  * Convergence is mathematically real where it can be (sup of the rung is
  * the next rung); wall rungs and era jumps are the notation's practical
- * boundary, exactly like era I's CNF depth wall below epsilon_0.
+ * boundary.
  *
- * The chain is endless: static eras 0..3 hand over to a procedural
- * large-cardinal ladder (one EraDef per axiom tier, tier -> infinity). */
+ * Era 0 is not a generator ladder at all: it is the *operation climb*
+ * (ops.ts), which walks 1 → ω → Γ₀ — the finite hyperoperations run out of
+ * Knuth arrows, then the ω-side runs out of binary Veblen. From Γ₀ on, the
+ * eras below take over: ψ (→ BHO), ℵ (→ the first inaccessible), and then
+ * the endless procedural large-cardinal ladder (one EraDef per axiom tier). */
 import {
   ONE,
   OMEGA,
@@ -77,129 +80,24 @@ function leadHead(a: Ord): Term | null {
   return a.length === 0 ? null : a[0]!;
 }
 
-/* ---------------- era 0: the finite layer (display only) ---------------- */
+/* ---------------- era 0: the climb (driven by ops.ts) ---------------- */
 
-export const ERA_FINITE: EraDef = {
-  id: "finite",
-  name: "纪元 0 · 有限层",
-  short: "有限",
+/** Index 0 is not a generator ladder at all — it is the operation climb
+ *  (see ops.ts). It is kept in the chain so era indices stay stable and the
+ *  roadmap can name where the climb hands over. */
+export const ERA_CLIMB: EraDef = {
+  id: "climb",
+  name: "运算阶梯 · 1 → ω → Γ₀",
+  short: "阶梯",
   startAlpha: ZERO,
-  wallName: "ω",
-  wallDesc: "点击已经点不动了 —— 有限步永远够不到 ω。放出一条 cofinal 序列,让极限送你过去。",
-  converge: 2000,
+  wallName: "Γ₀",
+  wallDesc:
+    "记号的尽头。有限侧:科学计数法、指数塔、葛立恒式箭头一路用尽,箭头个数 k 自己开始增长。ω 侧:箭头在不动点上塌缩,「多一个箭头」变成「多取一次不动点」,于是 φ(1,0)=ε₀、φ(2,0)=ζ₀…… 而 sup φ(k,0) = Γ₀ —— 二元 Veblen 到此为止。",
+  converge: 0,
   gens: [],
 };
 
-/* ---------------- era 1: Cantor Normal Form ---------------- */
-
-const CNF_LEVELS = 8;
-// era I income climbs ~1.4×/rung with the rank bridge; costs track it
-const CNF_COSTS = [1e4, 2.2e4, 4.8e4, 1.1e5, 2.3e5, 5.1e5, 1.1e6, 2.5e6];
-
-export const ERA_CNF: EraDef = {
-  id: "cnf",
-  name: "纪元 I · Cantor 范式",
-  short: "CNF",
-  startAlpha: ZERO,
-  wallName: "ε₀",
-  wallDesc: "CNF 的表示深度即将越界 —— ε₀ 是 ω 的第一个不动点,有限层的幂梯已无法记述它。",
-  converge: 2000,
-  gens: Array.from({ length: CNF_LEVELS }, (_, k): GenDef => {
-    const omegaK = wPow(k);
-    return {
-      id: `cf${k}`,
-      name:
-        k === 0
-          ? "cofinal-0 · 第一条 cofinal 序列(有限序列的极限是 ω)"
-          : `CNF 梯级 ${k} · 序列趋近 ${formatOrd(omegaK)}`,
-      cost: CNF_COSTS[k]!,
-      increment: (_alpha, count) => termOmega(nat(k), count),
-      saturates: (a, converge) => {
-        const t = leadHead(a);
-        if (!t || t.head.kind !== "omega") return false;
-        const e = t.head.exp;
-        const isRung =
-          k === 0
-            ? e.length === 0
-            : e.length === 1 &&
-              e[0]!.head.kind === "omega" &&
-              e[0]!.head.exp.length === 0 &&
-              e[0]!.coef === k;
-        return isRung && t.coef >= converge;
-      },
-      deliver: () => wPow(k + 1),
-      wall: k === CNF_LEVELS - 1,
-      waypoint:
-        k === 1 ? "ω² —— 尾项吸收成为常态" : k === 3 ? "ω⁴" : k === 5 ? "ω⁶" : undefined,
-    };
-  }),
-};
-
-/* ---------------- era 2: binary Veblen ---------------- */
-
-// One flat ladder of phi(a,b) rungs from epsilon_0 up to the Gamma_0 wall.
-// Each rung is a limit ordinal; filling its coefficient delivers the next.
-const VEB_RUNGS: { a: Ord; b: Ord }[] = [
-  { a: ONE, b: ZERO }, // phi(1,0) = epsilon_0
-  { a: ONE, b: ONE }, // phi(1,1) = epsilon_1
-  { a: ONE, b: OMEGA }, // phi(1,omega)
-  { a: ONE, b: wPow(2) }, // phi(1,omega^2)
-  { a: nat(2), b: ZERO }, // phi(2,0) = zeta_0
-  { a: nat(2), b: OMEGA }, // phi(2,omega)
-  { a: nat(3), b: ZERO }, // phi(3,0) = eta_0
-  { a: OMEGA, b: ZERO }, // phi(omega,0)
-  { a: add(OMEGA, ONE), b: ZERO }, // phi(omega+1,0)
-  { a: add(OMEGA, OMEGA), b: ZERO }, // phi(omega*2,0)
-  { a: wPow(2), b: ZERO }, // phi(omega^2,0)
-  { a: [termOmega(OMEGA)], b: ZERO }, // phi(omega^omega,0)
-  { a: [termOmega([termOmega(OMEGA)])], b: ZERO }, // phi(omega^(omega^omega),0)
-  { a: EPS0, b: ZERO }, // phi(epsilon_0,0)
-  { a: ZETA0, b: ZERO }, // phi(zeta_0,0) — the Gamma_0 wall rung
-];
-
-const VEB_BASE_COST = 6.5e18;
-const VEB_COST_GROWTH = 1.3;
-
-export const ERA_VEBLEN: EraDef = {
-  id: "veblen",
-  name: "纪元 II · Veblen 层谱",
-  short: "Veblen",
-  startAlpha: EPS0,
-  wallName: "Γ₀",
-  wallDesc:
-    "φ 的第一参数已经能表示整个 Cantor 层谱 —— 记号开始自指。Γ₀ = φ(α,0) 的第一个不动点,Veblen 二元表示到此为止。",
-  converge: 2000,
-  gens: VEB_RUNGS.map((r, j): GenDef => {
-    const rung = [termVeblen(r.a, r.b)];
-    return {
-      id: `veb${j}`,
-      name: `Veblen 梯级 ${j} · ${formatOrd(rung)}`,
-      cost: VEB_BASE_COST * VEB_COST_GROWTH ** j,
-      increment: (_alpha, count) => termVeblen(r.a, r.b, count),
-      saturates: (a, converge) => {
-        const t = leadHead(a);
-        if (!t || t.head.kind !== "veblen") return false;
-        return equal(t.head.a, r.a) && equal(t.head.b, r.b) && t.coef >= converge;
-      },
-      deliver: () => [termVeblen(VEB_RUNGS[j + 1]!.a, VEB_RUNGS[j + 1]!.b)],
-      wall: j === VEB_RUNGS.length - 1,
-      waypoint:
-        j === 0
-          ? "ε₀ —— CNF 之外的第一个记号"
-          : j === 4
-            ? "ζ₀ —— ε 列的极限"
-            : j === 6
-              ? "η₀"
-              : j === 7
-                ? "φ(ω,0)"
-                : j === 13
-                  ? "φ(ε₀,0) —— 序数作为序数的参数"
-                  : undefined,
-    };
-  }),
-};
-
-/* ---------------- era 3: Madore's psi ---------------- */
+/* ---------------- era 1: Madore's psi ---------------- */
 
 /** Omega^e as a value. */
 const bo = (e: Ord): Ord => [termBigomega(e)];
@@ -264,7 +162,7 @@ const PSI_COST_GROWTH = 1.12;
 
 export const ERA_PSI: EraDef = {
   id: "psi",
-  name: "纪元 III · 坍缩函数",
+  name: "纪元 II · 坍缩函数",
   short: "ψ",
   startAlpha: GAMMA0,
   wallName: "BHO",
@@ -296,7 +194,7 @@ export const ERA_PSI: EraDef = {
   })),
 };
 
-/* ---------------- era 4: the aleph layer ---------------- */
+/* ---------------- era 2: the aleph layer ---------------- */
 
 // Index ladder for the alephs: 1, 2, 3, 4, omega, omega^2, omega^omega,
 // epsilon_0, zeta_0, Gamma_0 — the countable indices, then the wall.
@@ -318,7 +216,7 @@ const ALEPH_COST_GROWTH = 1.2;
 
 export const ERA_ALEPH: EraDef = {
   id: "aleph",
-  name: "纪元 IV · 阿列夫层谱",
+  name: "纪元 III · 阿列夫层谱",
   short: "ℵ",
   startAlpha: [termCard(0, nat(1))], // aleph_1 — the first uncountable ordinal
   wallName: "第一不可达基数",
@@ -348,7 +246,7 @@ export const ERA_ALEPH: EraDef = {
   })),
 };
 
-/* ---------------- era 5+: the large-cardinal ladder (procedural) ---------------- */
+/* ---------------- era 3+: the large-cardinal ladder (procedural) ---------------- */
 
 const LARGE_LEVELS = 8;
 const LARGE_BASE_COST = 1.5e62;
@@ -367,7 +265,7 @@ export function largeCardinalEra(tier: number): EraDef {
   const first: Ord = [termCard(tier, ZERO)];
   return {
     id: `lc${tier}`,
-    name: `纪元 ${["V", "VI", "VII", "VIII", "IX", "X", "XI", "XII"][tier - 1] ?? tier} · ${axiomTierName(tier)}`,
+    name: `纪元 ${["IV", "V", "VI", "VII", "VIII", "IX", "X", "XI"][tier - 1] ?? tier} · ${axiomTierName(tier)}`,
     short: ax ? ax.tag : `κ${tier}`,
     startAlpha: first,
     wallName: axiomTierName(tier + 1),
@@ -396,11 +294,11 @@ export function largeCardinalEra(tier: number): EraDef {
 
 /* ---------------- the endless chain ---------------- */
 
-export const STATIC_ERAS: EraDef[] = [ERA_CNF, ERA_VEBLEN, ERA_PSI, ERA_ALEPH];
+export const STATIC_ERAS: EraDef[] = [ERA_CLIMB, ERA_PSI, ERA_ALEPH];
 
 const DYNAMIC_CACHE = new Map<number, EraDef>();
 
-/** The era at a chain index; index >= 4 runs the procedural cardinal ladder. */
+/** The era at a chain index; index >= 3 runs the procedural cardinal ladder. */
 export function eraAt(index: number): EraDef {
   if (index < STATIC_ERAS.length) return STATIC_ERAS[index]!;
   const tier = index - STATIC_ERAS.length + 1;

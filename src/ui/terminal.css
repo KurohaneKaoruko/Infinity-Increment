@@ -1,17 +1,24 @@
-/* INFINITY // terminal — phosphor CRT skin, dark & light mono themes */
+/* INFINITY // terminal — dark & light mono themes.
+ * Dark is "dark paper", not neon CRT: neutral near-white text, low-saturation
+ * accent, almost no glow. Light keeps its original paper look (its --accent is
+ * deliberately aliased to --fg so any accent usage renders as it always did). */
 :root,
 :root[data-theme="dark"] {
-  --bg: #050805;
-  --panel: #081108;
-  --fg: #39ff6e;
-  --dim: #1d8a3f;
-  --dimmer: #0e4a20;
-  --crit: #ff5555;
-  --amber: #ffb000;
-  --glow: rgba(57, 255, 110, 0.45);
-  --scan: rgba(0, 0, 0, 0.22);
-  --vignette: rgba(0, 0, 0, 0.55);
-  --hover-bg: rgba(57, 255, 110, 0.08);
+  --bg: #0f1113;
+  --panel: #16191c;
+  --fg: #d6dbd8;
+  --dim: #86a293;
+  --dimmer: #2c3630;
+  --accent: #6fcf97;
+  --crit: #e06c75;
+  --amber: #d9a441;
+  --glow: rgba(111, 207, 151, 0.1);
+  --scan: rgba(255, 255, 255, 0.012);
+  --vignette: rgba(0, 0, 0, 0.35);
+  --hover-bg: rgba(255, 255, 255, 0.05);
+  --overlay: rgba(0, 0, 0, 0.75);
+  --glitch-a: rgba(224, 108, 117, 0.7);
+  --glitch-b: rgba(86, 182, 194, 0.7);
 }
 
 :root[data-theme="light"] {
@@ -20,12 +27,16 @@
   --fg: #1a1a18;
   --dim: #6b6b64;
   --dimmer: #c9c9c0;
+  --accent: #1a1a18;
   --crit: #c22f2f;
   --amber: #8a6d1a;
   --glow: transparent;
   --scan: rgba(0, 0, 0, 0.04);
   --vignette: rgba(0, 0, 0, 0.12);
   --hover-bg: rgba(0, 0, 0, 0.05);
+  --overlay: rgba(0, 0, 0, 0.6);
+  --glitch-a: rgba(255, 85, 85, 0.7);
+  --glitch-b: rgba(85, 255, 255, 0.7);
 }
 
 * {
@@ -52,12 +63,8 @@ body {
   position: relative;
   min-height: 100vh;
   min-height: 100dvh; /* dynamic viewport: mobile browser chrome aware */
-  display: grid;
-  grid-template-areas:
-    "header header"
-    "shop right";
-  grid-template-rows: auto 1fr;
-  grid-template-columns: 1fr 1.2fr;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
   padding: 8px;
   padding-left: max(8px, env(safe-area-inset-left));
@@ -104,10 +111,10 @@ body {
 }
 
 .header {
-  grid-area: header;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 0 0 auto;
 }
 
 .header-top {
@@ -124,6 +131,7 @@ body {
 .alpha-line .alpha {
   font-size: 18px;
   font-weight: bold;
+  color: var(--accent);
 }
 
 .crit {
@@ -148,33 +156,68 @@ body {
 
 @keyframes jitter {
   0% {
-    text-shadow: 2px 0 rgba(255, 85, 85, 0.7), -2px 0 rgba(85, 255, 255, 0.7);
+    text-shadow: 2px 0 var(--glitch-a), -2px 0 var(--glitch-b);
     transform: translateX(0);
   }
   25% {
-    text-shadow: -2px 0 rgba(255, 85, 85, 0.7), 2px 0 rgba(85, 255, 255, 0.7);
+    text-shadow: -2px 0 var(--glitch-a), 2px 0 var(--glitch-b);
     transform: translateX(1px);
   }
   50% {
-    text-shadow: 1px 0 rgba(255, 85, 85, 0.7), -1px 0 rgba(85, 255, 255, 0.7);
+    text-shadow: 1px 0 var(--glitch-a), -1px 0 var(--glitch-b);
     transform: translateX(-1px);
   }
   75% {
-    text-shadow: -1px 1px rgba(255, 85, 85, 0.7), 1px -1px rgba(85, 255, 255, 0.7);
+    text-shadow: -1px 1px var(--glitch-a), 1px -1px var(--glitch-b);
     transform: translateX(0.5px);
   }
 }
 
-.shop {
-  grid-area: shop;
+/* ---- tab bar (top navigation, one page visible at a time) ---- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  border-bottom: 1px solid var(--dimmer);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.right {
-  grid-area: right;
+.tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 4px 12px;
+  color: var(--dim);
+  white-space: nowrap;
+}
+
+.tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.tab:hover:not(.active) {
+  color: var(--fg);
+  background: var(--hover-bg);
+}
+
+/* ---- page body ---- */
+.content {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.page {
+  flex: 1;
   min-height: 0;
+  overflow: auto;
 }
 
 .stats {
@@ -299,15 +342,11 @@ button:disabled {
 .modal {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.6);
+  background: var(--overlay);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
-}
-
-:root[data-theme="dark"] .modal {
-  background: rgba(0, 0, 0, 0.8);
 }
 
 .modal-box {
@@ -415,21 +454,146 @@ button:disabled {
   color: var(--dim);
 }
 
-/* mobile: stack the grid, everything full width */
+/* ------------------------------------------------------------------ */
+/* 运算阶梯 — the climb                                                */
+/* ------------------------------------------------------------------ */
+
+/* the position, written in whatever notation the climb has reached */
+.climb-value {
+  font-size: 26px;
+  font-weight: bold;
+  color: var(--accent);
+  letter-spacing: 1px;
+  line-height: 1.4;
+  margin: 2px 0 4px;
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+/* "这一级在算什么" / "为什么机器会消失" — the teaching text */
+.hint {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--dim);
+  border-left: 3px solid var(--dimmer);
+  padding: 2px 0 2px 8px;
+  margin: 8px 0;
+}
+
+.hint b {
+  color: var(--fg);
+}
+
+/* the mutation preview: what changes when this rung breaks */
+.mutation-preview {
+  border: 1px dashed var(--dimmer);
+  padding: 8px 10px;
+  margin: 8px 0;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.mutation-preview b {
+  color: var(--amber);
+}
+
+/* the ten-rung overview strip */
+.ladder {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.ladder-rung {
+  display: grid;
+  grid-template-columns: 3ch 6ch 1fr 2ch;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  border-left: 3px solid transparent;
+  font-size: 13px;
+  color: var(--dim);
+}
+
+.ladder-rung.done {
+  color: var(--dim);
+  opacity: 0.6;
+  border-left-color: var(--dimmer);
+}
+
+.ladder-rung.current {
+  color: var(--fg);
+  border-left-color: var(--amber);
+  background: var(--hover-bg);
+}
+
+.ladder-n {
+  text-align: right;
+  opacity: 0.7;
+}
+
+.ladder-glyph {
+  text-align: center;
+  color: var(--amber);
+}
+
+.ladder-mark {
+  text-align: right;
+}
+
+/* shop rows carry a one-line "what it does" under the button */
+.shop-item {
+  margin-bottom: 6px;
+}
+
+.shop-note {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dim);
+  padding: 2px 2px 0 10px;
+}
+
+/* the income chain, item by item — so every purchase's effect is visible */
+.income-parts {
+  border: 1px dashed var(--dimmer);
+  padding: 6px 10px;
+  margin: 6px 0 10px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.income-total {
+  color: var(--amber);
+  border-top: 1px dotted var(--dimmer);
+  margin-top: 4px;
+  padding-top: 4px;
+}
+
+@media (max-width: 720px) {
+  .climb-value {
+    font-size: 20px;
+  }
+
+  .ladder-rung {
+    grid-template-columns: 3ch 5ch 1fr 2ch;
+    font-size: 12px;
+  }
+}
+
+/* mobile: tighter chrome, tabs stay one scrollable row */
 @media (max-width: 720px) {
   body {
     font-size: 13px;
   }
 
   .crt {
-    grid-template-areas:
-      "header"
-      "shop"
-      "right";
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr;
     padding: 6px;
     gap: 6px;
+  }
+
+  .tab {
+    padding: 6px 10px;
   }
 
   .alpha-line .alpha {
