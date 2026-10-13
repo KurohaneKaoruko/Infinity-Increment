@@ -2,7 +2,7 @@
   // Cloudflare Worker: 排行榜 API + 单文件游戏静态托管一体。
   // 部署:npm run worker:deploy  (= vite build && wrangler deploy)
   // (namespace id 不是机密,可以直接提交进仓库;密钥型绑定才用 wrangler secret put)
-  "name": "infinity-terminal",
+  "name": "infinity-increment",
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-01",
 
