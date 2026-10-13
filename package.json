@@ -1,0 +1,44 @@
+{
+  "name": "infinity",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "icons": "python scripts/gen-icons.py",
+    "icons:check": "python scripts/gen-icons.py --check",
+    "serve": "node server/index.mjs",
+    "start": "npm run build && npm run serve",
+    "pages:prepare": "node scripts/prepare-pages.mjs",
+    "pages:deploy": "npm run build && npm run pages:prepare && npx --package wrangler pages deploy dist",
+    "worker:deploy": "npm run build && npx --package wrangler deploy",
+    "desktop:dev": "npx --package @tauri-apps/cli tauri dev",
+    "desktop:build": "npx --package @tauri-apps/cli tauri build",
+    "mobile:assets": "npx --package @capacitor/assets@latest assets generate",
+    "mobile:sync": "npx --package @capacitor/cli cap sync",
+    "mobile:open:android": "npx --package @capacitor/cli cap open android",
+    "mobile:open:ios": "npx --package @capacitor/cli cap open ios",
+    "mobile:run:android": "npx --package @capacitor/cli cap run android"
+  },
+  "dependencies": {
+    "break_infinity.js": "^2.2.0",
+    "solid-js": "^1.9.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "fast-check": "^4.10.2",
+    "jsdom": "^30.1.1",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vite-plugin-solid": "^2.11.6",
+    "vitest": "^5.0.3"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true
+  }
+}

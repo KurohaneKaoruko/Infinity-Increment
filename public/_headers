@@ -1,0 +1,27 @@
+# Cloudflare Pages / Netlify compatible response headers.
+# More specific path blocks override the /* catch-all in both implementations.
+# Copied verbatim into dist/ by the Vite public-dir copy.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
+
+# the shell and the service worker must revalidate so deploys propagate
+/index.html
+  Cache-Control: no-cache
+
+/sw.js
+  Cache-Control: no-cache
+
+/manifest.webmanifest
+  Cache-Control: no-cache
+
+# icons are content-stable; a day of caching is plenty and safe to bust
+/apple-touch-icon.png
+/favicon-16.png
+/favicon-32.png
+/icon-192.png
+/icon-512.png
+/icon-maskable-512.png
+  Cache-Control: public, max-age=86400

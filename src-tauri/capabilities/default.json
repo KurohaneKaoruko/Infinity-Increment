@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for the game window. The game needs no filesystem, shell or network access — it is fully offline; core:default is everything the webview shell requires.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}
