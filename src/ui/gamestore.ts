@@ -5,15 +5,27 @@
 import { createSignal } from "solid-js";
 import { initialState, fromSave, toSave, type GameState } from "../core/game/state";
 import {
+  absoluteApproach,
+  approach,
   buyClickUpgrade,
+  buyDriver,
+  buyDriverMax,
   buyEraGen,
   buyMoneyGen,
+  canBuyDriver,
   click,
+  climbValue,
+  currentRung,
+  driversLeft,
   eraGenCost,
   eraOf,
-  eraProgress,
+  moneyBreakdown,
   moneyRate,
+  previewMoneyGen,
+  nextDriverCost,
   omegaApproach,
+  rungFraction,
+  rungRate,
   rungReached,
   setAxiom,
   tick,
@@ -61,10 +73,40 @@ export { lbStatus, lbBoard, lbBusy, lbName };
 
 /** the current era definition */
 export const era = () => eraOf(state());
-/** 0 → 1 across the current era's ladder (the wall meter) */
-export const approach = () => eraProgress(state());
-/** asymptotic approach to the absolute infinite Ω (never 1) */
+/** 0 → 1 across whatever ladder the player is standing on */
+export const progress = () => approach(state());
+/** 逼近 ω 的进度(阶梯走完就是 1) */
 export const omegaMeter = () => omegaApproach(state());
+/** 逼近绝对无穷 Ω(永不到达) */
+export const absoluteMeter = () => absoluteApproach(state());
+
+/* ---------------- the climb ---------------- */
+
+export const climbing = () => state().phase === "climb";
+/** the rung the player is standing on */
+export const rung = () => currentRung(state());
+/** the position written in the notation the climb has reached */
+export const climbText = () => climbValue(state());
+/** how full the current rung is (0 → 1) */
+export const rungFill = () => rungFraction(state());
+/** progress per second at the current rung */
+export const climbSpeed = () => rungRate(state());
+/** 按当前速度还需多少秒破级(没有机器 → Infinity) */
+export const climbEta = (): number => {
+  const s = state();
+  if (s.phase !== "climb") return Number.POSITIVE_INFINITY;
+  const rate = rungRate(s);
+  if (rate <= 0) return Number.POSITIVE_INFINITY;
+  return (currentRung(s).threshold - s.rungProgress) / rate;
+};
+/** machines deployed / the rung's limit */
+export const machines = () => state().drivers;
+export const machineRoom = () => driversLeft(state());
+/** price of the next machine */
+export const machineCost = () => nextDriverCost(state());
+export const machineAffordable = () => canBuyDriver(state());
+/** 算力构成的逐项拆解(底数 × 位置桥 × 转生 × 公理) */
+export const incomeParts = () => moneyBreakdown(state());
 
 let manager: SaveManager | null = null;
 let booted = false;
@@ -120,7 +162,8 @@ export function bootGame(): void {
       lastSeen: loaded.lastSeen,
       now: Date.now(),
       step: offlineStep,
-      isEqual: (a, b) => equal(a.alpha, b.alpha),
+      isEqual: (a, b) =>
+        equal(a.alpha, b.alpha) && a.rung === b.rung && a.rungProgress === b.rungProgress,
       moneyRate,
     });
     s = { ...res.state, money: res.state.money.add(res.report.moneyGain), lastSeen: Date.now() };
@@ -216,6 +259,24 @@ export function clickAction(): void {
 
 export function buyGen(tier: number): void {
   const r = buyMoneyGen(state(), tier);
+  if (r.events.length > 0) {
+    advance(r.state);
+    noticeEvent(r.events);
+  }
+}
+
+/** deploy one machine on the current rung */
+export function buyMachine(): void {
+  const r = buyDriver(state());
+  if (r.events.length > 0) {
+    advance(r.state);
+    noticeEvent(r.events);
+  }
+}
+
+/** deploy as many machines as the money allows */
+export function buyMachineMax(): void {
+  const r = buyDriverMax(state());
   if (r.events.length > 0) {
     advance(r.state);
     noticeEvent(r.events);

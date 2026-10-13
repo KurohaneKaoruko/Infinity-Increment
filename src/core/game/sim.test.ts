@@ -1,17 +1,63 @@
-/* Balance probe (task 4.6): greedy-policy simulation across the era chain.
- * Target: no era wall arrives in seconds (the climb must feel endless) and
- * no era wall is unreachable (costs must track the income bridge). */
+/* Balance probe (task 4.6 / task 12): greedy-policy simulation across the
+ * operation ladder and the era chain.
+ * Targets: the climb reaches ω → Γ₀ in roughly an hour and a half, no era wall
+ * arrives in seconds (the climb must feel endless) and no era wall is
+ * unreachable (costs must track the income bridge). */
 import { describe, it, expect } from "vitest";
 import { initialState, type GameState } from "./state";
-import { buyEraGen, buyClickUpgrade, buyMoneyGen, click, eraGenCost, eraOf, rungReached, tick } from "./engine";
+import {
+  buyDriver,
+  buyEraGen,
+  buyClickUpgrade,
+  buyMoneyGen,
+  canBuyDriver,
+  click,
+  eraGenCost,
+  eraOf,
+  nextDriverCost,
+  rungReached,
+  tick,
+} from "./engine";
 import { eraAt } from "./eras";
-import { MONEY_GENS, TICKS_PER_SECOND } from "./config";
+import { MONEY_GENS, TICKS_PER_SECOND, moneyGenCost } from "./config";
 import { bn } from "../bignum";
 
 interface Policy {
   s: GameState;
   clicks: number;
 }
+
+/* ---------------- the climb ---------------- */
+
+/** a player who buys machines the moment they can afford them, and sinks
+ *  spare change into infrastructure without derailing the next machine */
+function climbStep(s: GameState): GameState {
+  if (canBuyDriver(s)) return buyDriver(s).state;
+  const reserve = nextDriverCost(s) * 0.2;
+  for (let tier = MONEY_GENS.length - 1; tier >= 0; tier--) {
+    const cost = moneyGenCost(tier, s.gens[tier] ?? 0);
+    if (cost <= reserve && s.money.gte(cost)) {
+      const r = buyMoneyGen(s, tier);
+      if (r.events.length > 0) return r.state;
+    }
+  }
+  return s;
+}
+
+/** seconds until the climb hands over to the era chain (Infinity on budget out) */
+function playClimb(budgetSeconds: number): number {
+  let s = initialState(0);
+  const totalTicks = budgetSeconds * TICKS_PER_SECOND;
+  for (let t = 0; t < totalTicks; t++) {
+    s = climbStep(s);
+    const r = tick(s);
+    s = r.state;
+    if (r.events.some((e) => e.kind === "transcended")) return t / TICKS_PER_SECOND;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+/* ---------------- the era chain ---------------- */
 
 function step(p: Policy, t: number): void {
   // casual player: ~3 clicks/second early, trailing off later
@@ -65,6 +111,7 @@ function play(eraIndex: number, budgetSeconds: number): number {
     // a veteran arrives: money generators maxed (trivial by then), no currency
     p.s = {
       ...p.s,
+      phase: "era",
       era: eraIndex,
       eraGens: eraAt(eraIndex).gens.map(() => 0),
       alpha: eraAt(eraIndex).startAlpha,
@@ -85,39 +132,41 @@ function play(eraIndex: number, budgetSeconds: number): number {
 const MIN_PER_ERA = 25; // minutes — no wall may break faster than this
 const MAX_PER_ERA = 200; // minutes — no wall may be out of reach
 
-describe("era chain pacing (4.6)", () => {
-  it("era I (CNF → ε₀) breaks its wall in a sane window", () => {
-    const minutes = play(0, 220 * 60) / 60;
-    expect(minutes).toBeGreaterThanOrEqual(MIN_PER_ERA);
-    expect(minutes).toBeLessThanOrEqual(MAX_PER_ERA);
+describe("operation ladder pacing (task 12)", () => {
+  it("the climb from 1 to Γ₀ lands in the target window", () => {
+    const minutes = playClimb(240 * 60) / 60;
+    expect(minutes).toBeGreaterThan(60);
+    expect(minutes).toBeLessThan(150);
   }, 300_000);
+});
 
-  it("era II (Veblen → Γ₀) breaks its wall in a sane window", () => {
+describe("era chain pacing (4.6)", () => {
+  it("era I (ψ → BHO) breaks its wall in a sane window", () => {
     const minutes = play(1, 220 * 60) / 60;
     expect(minutes).toBeGreaterThanOrEqual(MIN_PER_ERA);
     expect(minutes).toBeLessThanOrEqual(MAX_PER_ERA);
   }, 300_000);
 
-  it("era III (ψ → BHO) breaks its wall in a sane window", () => {
+  it("era II (aleph → first inaccessible) breaks its wall in a sane window", () => {
     const minutes = play(2, 220 * 60) / 60;
     expect(minutes).toBeGreaterThanOrEqual(MIN_PER_ERA);
     expect(minutes).toBeLessThanOrEqual(MAX_PER_ERA);
   }, 300_000);
 
-  it("era IV (aleph → first inaccessible) breaks its wall in a sane window", () => {
+  it("era III (cardinal tier 1) breaks its wall in a sane window", () => {
     const minutes = play(3, 220 * 60) / 60;
     expect(minutes).toBeGreaterThanOrEqual(MIN_PER_ERA);
     expect(minutes).toBeLessThanOrEqual(MAX_PER_ERA);
   }, 300_000);
 
-  it("the cardinal ladder keeps going (era V wall reachable)", () => {
+  it("the cardinal ladder keeps going (era IV wall reachable)", () => {
     const minutes = play(4, 220 * 60) / 60;
     expect(minutes).toBeGreaterThanOrEqual(MIN_PER_ERA);
     expect(minutes).toBeLessThanOrEqual(MAX_PER_ERA);
   }, 300_000);
 
   it("procedural tiers stay reachable far down the endless ladder", () => {
-    // era 12 = the 9th axiom tier — no authored content left, still playable
+    // era 12 = the 10th axiom tier — no authored content left, still playable
     const minutes = play(12, 220 * 60) / 60;
     expect(minutes).toBeGreaterThan(0);
     expect(minutes).toBeLessThanOrEqual(MAX_PER_ERA);

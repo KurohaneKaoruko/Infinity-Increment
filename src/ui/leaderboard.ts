@@ -9,8 +9,8 @@
  * fetch plumbing is isolated behind probe/fetchBoard/submitScore. */
 import type { GameState } from "../core/game/state";
 import { formatOrd } from "../core/ordinal/format";
-import { rank } from "../core/ordinal/rank";
 import { eraAt } from "../core/game/eras";
+import { progressRank, climbValue } from "../core/game/engine";
 
 export interface LeaderboardEntry {
   /** display name chosen by the player, server-clamped */
@@ -87,12 +87,13 @@ export function sanitizeName(raw: string): string {
 
 /** Build the submission payload for a game state (pure). */
 export function scoreOf(s: GameState, name: string, device: string): Submission {
+  const climbing = s.phase === "climb";
   return {
     name: sanitizeName(name),
     era: Math.max(0, Math.floor(s.era)),
     // rank() is a double; stringify before it can exceed 2^53 precision
-    rank: BigInt(Math.max(0, Math.floor(rank(s.alpha)))).toString(),
-    alpha: formatOrd(s.alpha).slice(0, ALPHA_MAX),
+    rank: BigInt(Math.max(0, Math.floor(progressRank(s)))).toString(),
+    alpha: (climbing ? climbValue(s) : formatOrd(s.alpha)).slice(0, ALPHA_MAX),
     transcends: Math.max(0, Math.floor(s.transcends)),
     device,
   };

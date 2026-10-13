@@ -11,14 +11,60 @@ export interface MoneyGenTier {
   costMult: number;
   /** currency per second per unit */
   baseRate: number;
+  /** 它到底在做什么 */
+  what: string;
+  /** 它影响哪个数 */
+  affects: string;
+  /** 为什么需要它 */
+  why: string;
 }
 
 export const MONEY_GENS: MoneyGenTier[] = [
-  { name: "计数器", baseCost: 50, costMult: 1.15, baseRate: 0.15 },
-  { name: "求和器", baseCost: 750, costMult: 1.15, baseRate: 1.2 },
-  { name: "乘算器", baseCost: 10_000, costMult: 1.15, baseRate: 6 },
-  { name: "幂算器", baseCost: 150_000, costMult: 1.15, baseRate: 40 },
-  { name: "超限算器", baseCost: 2_000_000, costMult: 1.15, baseRate: 250 },
+  {
+    name: "计数器",
+    baseCost: 50,
+    costMult: 1.15,
+    baseRate: 0.15,
+    what: "一台只会 +1 的机器。",
+    affects: "货币产出 +0.15/s(乘上位置桥之后才是真实收入)",
+    why: "起手唯一买得起的东西。货币是算力预算 —— 它不改变数值,只决定你能部署多少台机器。",
+  },
+  {
+    name: "求和器",
+    baseCost: 750,
+    costMult: 1.15,
+    baseRate: 1.2,
+    what: "把计数器的输出加总。",
+    affects: "货币产出 +1.2/s",
+    why: "单价比计数器高 8 倍,但产出高 8 倍 —— 数量堆上去之后更划算。",
+  },
+  {
+    name: "乘算器",
+    baseCost: 10_000,
+    costMult: 1.15,
+    baseRate: 6,
+    what: "把求和折叠成乘法。",
+    affects: "货币产出 +6/s",
+    why: "第一台真正「折叠」算力的机器。之后每一级阶梯的机器都更贵,得靠它撑住预算。",
+  },
+  {
+    name: "幂算器",
+    baseCost: 150_000,
+    costMult: 1.15,
+    baseRate: 40,
+    what: "把乘法折叠成乘方。",
+    affects: "货币产出 +40/s",
+    why: "阶梯越高,一台机器就越贵。幂算器是中层预算的主力。",
+  },
+  {
+    name: "超限算器",
+    baseCost: 2_000_000,
+    costMult: 1.15,
+    baseRate: 250,
+    what: "不再处理有限数,直接处理极限。",
+    affects: "货币产出 +250/s",
+    why: "为 ω 之后的纪元链准备的算力。到了纪元链,产出桥会换成 α 自己的量级,这里的底子越厚越轻松。",
+  },
 ];
 
 /** higher tier i+1 boosts tier i: ×(1 + 0.25·count[i+1]) */
@@ -68,3 +114,11 @@ export function moneyGenCost(tier: number, count: number): number {
 export function clickUpgradeCost(clickLevel: number): number {
   return Math.ceil(50 * Math.pow(4, clickLevel - 1));
 }
+
+/** 手动算力:点击这条线刻意不随位置桥增长 —— 它只是启动资金。 */
+export const CLICK_UPGRADE = {
+  name: "手动算力",
+  what: "你亲手按下的那一次计算。",
+  affects: "每次点击的收入 = 等级 × 转生倍率 × 公理点击倍率",
+  why: "只在前几分钟有用:机器一开动,手点就追不上了。它是启动资金,不是主引擎 —— 数值只能靠机器算出来。",
+} as const;

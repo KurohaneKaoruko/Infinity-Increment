@@ -30,7 +30,8 @@ function okPow(a: Parameters<typeof pow>[0], b: Parameters<typeof pow>[1]): Game
 }
 
 function stateWith(alpha: GameState["alpha"], extra: Partial<GameState> = {}): GameState {
-  return { ...initialState(1000), alpha, ...extra };
+  // these cases are about ordinal positions, i.e. the era chain
+  return { ...initialState(1000), phase: "era", alpha, ...extra };
 }
 
 const memStore = () => {

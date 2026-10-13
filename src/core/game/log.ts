@@ -3,6 +3,8 @@ import type { GameEvent } from "./engine";
 
 export function describeEvent(e: GameEvent): string | null {
   switch (e.kind) {
+    case "mutation":
+      return `第 ${e.rung} 级「${e.name}」突破 —— ${e.mutation} 数值现在写作 ${e.notation}。旧机器全部报废。`;
     case "converged":
       return `序列收敛,极限到来:${e.to} —— 尾项被吸收。`;
     case "waypoint":

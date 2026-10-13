@@ -4,42 +4,49 @@ import { SaveManager } from "./manager";
 import { encodeSave, decodeSave } from "./codec";
 import { migrate } from "./migrations";
 import { settleOffline } from "./offline";
-import type { SaveDataV2 } from "./schema";
+import type { SaveDataV3 } from "./schema";
 import { fromNumber, equal, height } from "../ordinal/ordinal";
 import { fromJSON, toJSON } from "../ordinal/serialize";
+import { eraAt } from "../game/eras";
 import { bn } from "../bignum";
 
-function makeSave(overrides: Partial<SaveDataV2> = {}): SaveDataV2 {
+function makeSave(overrides: Partial<SaveDataV3> = {}): SaveDataV3 {
   return {
-    version: 2,
+    version: 3,
     alpha: toJSON(fromNumber(42)),
     money: "1234.5",
     gens: [3, 1],
     era: 0,
-    eraGens: [1, 0, 0, 0, 0, 0, 0, 0],
+    eraGens: [],
     clickLevel: 2,
     transcends: 0,
     axiom: null,
     lastSeen: 1_700_000_000_000,
+    phase: "climb",
+    rung: 3,
+    rungProgress: 120.5,
+    drivers: 4,
     ...overrides,
   };
 }
 
 describe("migrations (3.2)", () => {
-  it("migrates a v0 prototype save to the current v2", () => {
+  it("migrates a v0 prototype save to the current version", () => {
     const v0 = { alpha: 42, money: 1234.5, gens: [3, 1], lastSeen: 1_700_000_000_000 };
-    const v2 = migrate(v0);
-    expect(v2.version).toBe(2);
-    expect(equal(fromJSON(v2.alpha), fromNumber(42))).toBe(true);
-    expect(v2.money).toBe("1234.5");
-    expect(v2.gens).toEqual([3, 1]);
-    expect(v2.era).toBe(0);
-    expect(v2.eraGens).toEqual([]);
-    expect(v2.transcends).toBe(0);
-    expect(v2.axiom).toBeNull();
+    const v3 = migrate(v0);
+    expect(v3.version).toBe(3);
+    expect(equal(fromJSON(v3.alpha), fromNumber(42))).toBe(true);
+    expect(v3.money).toBe("1234.5");
+    expect(v3.gens).toEqual([3, 1]);
+    expect(v3.era).toBe(0);
+    expect(v3.eraGens).toEqual([]);
+    expect(v3.transcends).toBe(0);
+    expect(v3.axiom).toBeNull();
+    expect(v3.phase).toBe("climb");
+    expect(v3.rung).toBe(1);
   });
 
-  it("upgrades a v1 (CNF-era) save to v2, keeping the cofinal tiers", () => {
+  it("upgrades a v1 (CNF-era) save: the ladder is new content, wealth is kept", () => {
     const v1 = {
       version: 1,
       alpha: toJSON(fromNumber(7)),
@@ -51,17 +58,61 @@ describe("migrations (3.2)", () => {
       axiom: "vl",
       lastSeen: 1_700_000_000_000,
     };
-    const v2 = migrate(v1);
-    expect(v2.version).toBe(2);
-    expect(v2.era).toBe(0);
-    expect(v2.eraGens).toEqual([1, 1, 0, 0, 0]);
-    expect(v2.axiom).toBe("vl");
-    expect(v2.transcends).toBe(1);
+    const v3 = migrate(v1);
+    expect(v3.version).toBe(3);
+    expect(v3.phase).toBe("climb");
+    expect(v3.rung).toBe(1);
+    expect(v3.money).toBe("999");
+    expect(v3.gens).toEqual([2, 0]);
+    expect(v3.axiom).toBe("vl");
+    expect(v3.transcends).toBe(1);
+  });
+
+  it("shifts a v2 save down one era slot: ψ (v2 era 2) becomes v3 era 1", () => {
+    const v2 = {
+      version: 2,
+      alpha: toJSON(fromNumber(7)),
+      money: "5",
+      gens: [1],
+      era: 2,
+      eraGens: [1, 0, 0],
+      clickLevel: 1,
+      transcends: 2,
+      axiom: null,
+      lastSeen: 1_700_000_000_000,
+    };
+    const v3 = migrate(v2);
+    expect(v3.version).toBe(3);
+    expect(v3.era).toBe(1);
+    expect(v3.phase).toBe("era");
+    expect(v3.eraGens).toEqual([1, 0, 0]);
+    // α sat below the new era's floor, so it is lifted to Γ₀
+    expect(equal(fromJSON(v3.alpha), eraAt(1).startAlpha)).toBe(true);
+  });
+
+  it("a v2 save parked on the Veblen ladder lands at the foot of the ψ era", () => {
+    const v2 = {
+      version: 2,
+      alpha: toJSON(fromNumber(99)),
+      money: "5",
+      gens: [1],
+      era: 1, // v2's binary-Veblen era — that range is now the climb's tail
+      eraGens: [1, 0],
+      clickLevel: 1,
+      transcends: 1,
+      axiom: null,
+      lastSeen: 1_700_000_000_000,
+    };
+    const v3 = migrate(v2);
+    expect(v3.era).toBe(1);
+    expect(v3.phase).toBe("era");
+    expect(equal(fromJSON(v3.alpha), eraAt(1).startAlpha)).toBe(true);
   });
 
   it("rejects unknown formats", () => {
     expect(() => migrate({ version: 99 })).toThrow();
     expect(() => migrate("garbage")).toThrow();
+    expect(() => migrate({ version: 3, phase: "nonsense" })).toThrow();
   });
 });
 
