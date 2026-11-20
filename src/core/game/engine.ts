@@ -5,14 +5,14 @@
  *
  *   CLIMB — the operation ladder (ops.ts). The player deploys machines on the
  *   current rung; machines push progress; progress fills; the rung *breaks*
- *   and the notation changes. The finite ladder ends at ω (Knuth arrows run
- *   out), the ω-side ladder ends at Γ₀ (binary Veblen runs out) — and *that*
- *   is where the era chain begins.
+ *   and the notation changes. The finite ladder hands off at the ω checkpoint;
+ *   the authored ω-side route then hands off at the Γ₀ checkpoint — and
+ *   *that* is where the era chain begins.
  *
  *   ERA — one endless chain of notation systems, each a ladder of rungs.
  *   Owning a rung's generator adds its term every tick; when the lead sits on
- *   a filled coefficient the rung delivers its limit — the next rung, or the
- *   era wall, which transcends into the next era. */
+ *   a filled coefficient triggers the authored checkpoint — the next rung, or
+ *   the era wall, which transcends into the next era. */
 import {
   add,
   compare,
@@ -22,16 +22,17 @@ import {
   type Term,
 } from "../ordinal/ordinal";
 import { bn, type BigNum } from "../bignum";
-import { bridgeMultiplierExp, rank } from "../ordinal/rank";
+import { rank } from "../ordinal/rank";
 import {
   ERA_UNIT_COST_MULT,
   MONEY_GENS,
   TICKS_PER_SECOND,
   TIER_BOOST,
-  axiomDef,
+  PULSE_CAP_TICKS,
+  runPolicy,
   clickUpgradeCost,
   moneyGenCost,
-  type AxiomDef,
+  type RunPolicy,
 } from "./config";
 import { eraAt, type EraDef, type GenDef } from "./eras";
 import {
@@ -53,7 +54,7 @@ import type { GameState } from "./state";
 export type GameEvent =
   | { kind: "clicked"; money: number; advanced: boolean }
   | { kind: "bought"; what: string }
-  | { kind: "converged"; to: string }
+  | { kind: "checkpoint"; to: string }
   | { kind: "waypoint"; label: string }
   | { kind: "mutation"; rung: number; name: string; notation: string; mutation: string }
   | { kind: "transcended"; era: number; name: string; wall: string };
@@ -91,7 +92,7 @@ export function eraProgress(s: GameState): number {
   if (j >= total) return 1;
   const rungTerm = era.gens[j]!.increment(lead, 1);
   const fill = sameHead(rungTerm, lead[0]!)
-    ? Math.min(1, lead[0]!.coef / convergeThreshold(s))
+    ? Math.min(1, lead[0]!.coef / stageThreshold(s))
     : 0;
   return (j + fill) / total;
 }
@@ -121,12 +122,6 @@ export function omegaApproach(s: GameState): number {
   return s.phase === "era" ? 1 : finiteFraction(s.rung, s.rungProgress);
 }
 
-/** Asymptotic approach to the absolute infinite Ω — never reaches 1. */
-export function absoluteApproach(s: GameState): number {
-  if (s.phase === "climb") return 0;
-  return 1 - Math.exp(-rank(s.alpha) / 2 ** 60);
-}
-
 /** The current position written in the notation the climb has reached. */
 export function climbValue(s: GameState): string {
   if (s.phase === "era") return "";
@@ -137,46 +132,53 @@ export function climbValue(s: GameState): string {
 /* Economy                                                             */
 /* ------------------------------------------------------------------ */
 
-/** g(α): ordinal position → the currency multiplier (rank bridge). */
-export function alphaMult(a: Ord): BigNum {
-  return bn(2).pow(bridgeMultiplierExp(a));
-}
-
-/** 位置本身带来的算力桥:爬升阶段是阶梯的破级桥,纪元阶段是 rank 桥。 */
-export function positionMult(s: GameState): BigNum {
-  if (s.phase === "era") return alphaMult(s.alpha);
+/**
+ * A game-only checkpoint reward. It deliberately does not convert ordinal
+ * magnitude into money: the constants encode the authored route and pacing.
+ */
+export function checkpointMult(s: GameState): BigNum {
+  if (s.phase === "era") {
+    const checkpoints = Math.floor(eraProgress(s) * eraOf(s).gens.length);
+    // Hand-tuned starts keep the cost tiers playable; these are not derived
+    // from the represented ordinal. Checkpoint rewards are similarly discrete.
+    const eraStartExponent = s.era === 1 ? 124 : s.era === 2 ? 176 : 184 + 2 * Math.min(12, s.era - 3);
+    const routeExponent = eraStartExponent + 4 * Math.floor(checkpoints / 4);
+    return bn(2).pow(routeExponent);
+  }
   const rung = currentRung(s);
   const frac = rung.threshold <= 0 ? 0 : Math.min(1, s.rungProgress / rung.threshold);
-  // 破级是一次 ×16 的突变;一级之内再缓慢抬升到 ×1.5,让进度条有推力
   return bn(rungIncomeMult(s.rung) * (1 + 0.5 * frac));
 }
 
-export function prestigeMult(s: GameState): number {
+export function cycleMult(s: GameState): number {
   return 1 + 2 * s.transcends;
 }
 
-function axiomOf(s: GameState): AxiomDef | null {
-  return axiomDef(s.axiom);
+function policyOf(s: GameState): RunPolicy | null {
+  return runPolicy(s.policy) ?? runPolicy(s.axiom ?? null);
 }
 
-export function convergeThreshold(s: GameState): number {
-  return eraOf(s).converge * (axiomOf(s)?.convergeMult ?? 1);
+export function stageThreshold(s: GameState): number {
+  return eraOf(s).threshold * (policyOf(s)?.thresholdMult ?? 1);
 }
 
-/** currency per second (the position bridge lives here) */
+/** Legacy name for callers from the v3 game API. */
+export const convergeThreshold = stageThreshold;
+
+/** Currency per second. This is a game economy, not an ordinal magnitude. */
 export function moneyRate(s: GameState): BigNum {
   return moneyBreakdown(s).total;
 }
 
 /** The income chain, item by item — the shop shows this so every purchase's
- *  effect is visible: 底数 × 位置桥 × 转生 × 公理 = 总产出. */
+ *  effect is visible: 底数 × 检查点奖励 × 周目 × 策略 = 总产出. */
 export interface MoneyBreakdown {
   /** 机器贡献的底数(货币/秒,未经任何倍率) */
   base: number;
-  /** 位置桥:爬升阶段是破级桥,纪元阶段是 α 的量级桥 */
-  position: BigNum;
-  prestige: number;
-  axiom: number;
+  /** Game-only checkpoint reward; it is not a measure of ordinal size. */
+  checkpoint: BigNum;
+  cycle: number;
+  policy: number;
   total: BigNum;
 }
 
@@ -190,10 +192,10 @@ export function moneyBreakdown(s: GameState): MoneyBreakdown {
     const boost = 1 + TIER_BOOST * next;
     base += MONEY_GENS[i]!.baseRate * count * boost;
   }
-  const prestige = prestigeMult(s);
-  const axiom = axiomOf(s)?.moneyMult ?? 1;
-  const position = positionMult(s);
-  return { base, position, prestige, axiom, total: bn(base).mul(prestige).mul(axiom).mul(position) };
+  const cycle = cycleMult(s);
+  const policy = policyOf(s)?.moneyMult ?? 1;
+  const checkpoint = checkpointMult(s);
+  return { base, checkpoint, cycle, policy, total: bn(base).mul(cycle).mul(policy).mul(checkpoint) };
 }
 
 export interface MoneyGenPreview {
@@ -212,9 +214,28 @@ export function previewMoneyGen(s: GameState, tier: number): MoneyGenPreview {
   return { current, afterPurchase, increase: afterPurchase.sub(current) };
 }
 
-/** 手动算力:点击一次的收入。刻意不随位置桥增长 —— 手点只能启动机器。 */
+/** Best affordable return per cost, including the purchase's boost to the tier below. */
+export function bestMoneyGen(s: GameState, budget: BigNum = s.money): number {
+  let best = -1;
+  let payback = bn(Number.POSITIVE_INFINITY);
+  for (let tier = 0; tier < MONEY_GENS.length; tier++) {
+    const generator = MONEY_GENS[tier]!;
+    const cost = moneyGenCost(tier, s.gens[tier] ?? 0);
+    if (!Number.isFinite(cost) || budget.lt(cost)) continue;
+    const increase = generator.baseRate * (1 + TIER_BOOST * (s.gens[tier + 1] ?? 0))
+      + (tier > 0 ? MONEY_GENS[tier - 1]!.baseRate * (s.gens[tier - 1] ?? 0) * TIER_BOOST : 0);
+    const candidate = bn(cost).div(increase);
+    if (candidate.lt(payback)) {
+      best = tier;
+      payback = candidate;
+    }
+  }
+  return best;
+}
+
+/** 手动算力：点击只提供预算，不直接推进当前路线。 */
 export function clickValue(s: GameState): number {
-  return s.clickLevel * prestigeMult(s) * (axiomOf(s)?.clickMult ?? 1);
+  return s.clickLevel * cycleMult(s) * (policyOf(s)?.clickMult ?? 1);
 }
 
 /* ------------------------------------------------------------------ */
@@ -290,10 +311,10 @@ function tickClimb(s: GameState): TickResult {
       notation: delivered,
       mutation: rung.mutation,
     });
-    next.drivers = 0;
     next.rungProgress = 0;
     if (broken >= FINAL_RUNG) {
-      // ε₀ — the ladder ends, the era chain begins
+      // Γ₀ route checkpoint — the era chain begins
+      next.drivers = 0;
       const to = 1;
       const nextEra = eraAt(to);
       next.phase = "era";
@@ -305,6 +326,9 @@ function tickClimb(s: GameState): TickResult {
       events.push({ kind: "transcended", era: to, name: nextEra.name, wall: delivered });
     } else {
       next.rung = broken + 1;
+      // Operators retune to the next notation instead of being discarded.
+      // The growing driver cap still leaves room for an upgrade decision.
+      next.drivers = Math.min(s.drivers, driverLimit(next.rung));
       next.alpha = ordinalRung(next.rung, 0);
     }
   }
@@ -351,11 +375,11 @@ function tickEra(s: GameState): TickResult {
   }
   next.alpha = alpha;
 
-  // convergence: the highest owned rung that sits filled delivers its limit
-  const threshold = convergeThreshold(s);
+  // Apply the next game checkpoint when its finite threshold is met.
+  const threshold = stageThreshold(s);
   for (const j of owned) {
     const gen: GenDef = era.gens[j]!;
-    if (!gen.saturates(next.alpha, threshold)) continue;
+    if (!gen.thresholdReached(next.alpha, threshold)) continue;
     if (gen.wall) {
       const to = s.era + 1;
       const nextEra = eraAt(to);
@@ -365,8 +389,8 @@ function tickEra(s: GameState): TickResult {
       next.alpha = nextEra.startAlpha;
       events.push({ kind: "transcended", era: to, name: nextEra.name, wall: era.wallName });
     } else {
-      next.alpha = gen.deliver(next.alpha);
-      events.push({ kind: "converged", to: gen.name });
+      next.alpha = gen.nextCheckpoint(next.alpha);
+      events.push({ kind: "checkpoint", to: era.gens[j + 1]!.name });
       if (gen.waypoint) events.push({ kind: "waypoint", label: gen.waypoint });
     }
     break;
@@ -376,7 +400,9 @@ function tickEra(s: GameState): TickResult {
 }
 
 export function tick(s: GameState): TickResult {
-  return s.phase === "era" ? tickEra(s) : tickClimb(s);
+  const result = s.phase === "era" ? tickEra(s) : tickClimb(s);
+  result.state.pulseTicks = Math.min(PULSE_CAP_TICKS, s.pulseTicks + 1);
+  return result;
 }
 
 /* ------------------------------------------------------------------ */
@@ -401,6 +427,7 @@ export function click(s: GameState): TickResult {
 }
 
 export function buyMoneyGen(s: GameState, tier: number): TickResult {
+  if (!MONEY_GENS[tier]) return { state: s, events: [] };
   const cost = moneyGenCost(tier, s.gens[tier] ?? 0);
   if (s.money.lt(cost)) return { state: s, events: [] };
   const next: GameState = { ...s, gens: [...s.gens] };
@@ -409,17 +436,58 @@ export function buyMoneyGen(s: GameState, tier: number): TickResult {
   return { state: next, events: [{ kind: "bought", what: MONEY_GENS[tier]!.name }] };
 }
 
+/** Buy as many units as are currently affordable (with a safety cap). */
+export function buyMoneyGenMax(s: GameState, tier: number): TickResult {
+  let current = s;
+  let bought = 0;
+  while (bought < 500) {
+    const result = buyMoneyGen(current, tier);
+    if (result.events.length === 0) break;
+    current = result.state;
+    bought++;
+  }
+  return bought === 0
+    ? { state: s, events: [] }
+    : { state: current, events: [{ kind: "bought", what: `${MONEY_GENS[tier]!.name} ×${bought}` }] };
+}
+
 /** Has the climb reached rung idx's position? (rung 0 is always open.) */
 export function rungReached(s: GameState, idx: number): boolean {
-  if (idx <= 0) return true;
+  if (!Number.isInteger(idx) || idx < 0) return false;
   const gen = eraOf(s).gens[idx];
   if (!gen) return false;
+  if (idx === 0) return true;
   const lead = s.alpha;
   if (lead.length === 0) return false;
   const rungTerm = gen.increment(lead, 1);
   return (
     compare([{ head: lead[0]!.head, coef: 1 }], [{ head: rungTerm.head, coef: 1 }]) >= 0
   );
+}
+
+/** The current route position, not the first hole in the owned-generator array. */
+export function eraFrontier(s: GameState): number {
+  if (s.phase !== "era") return -1;
+  const generators = eraOf(s).gens;
+  for (let i = generators.length - 1; i >= 0; i--) {
+    if (rungReached(s, i)) return i;
+  }
+  return -1;
+}
+
+/** Time to the next local checkpoint at the current deployment, with no future purchases. */
+export function checkpointEta(s: GameState): number {
+  if (s.phase === "climb") {
+    const speed = rungRate(s);
+    return speed > 0 ? Math.max(0, currentRung(s).threshold - s.rungProgress) / speed : Infinity;
+  }
+  const frontier = eraFrontier(s);
+  const count = s.eraGens[frontier] ?? 0;
+  if (count <= 0) return Infinity;
+  const generator = eraOf(s).gens[frontier];
+  const lead = s.alpha[0];
+  const filled = generator && lead && sameHead(generator.increment(s.alpha, 1), lead) ? lead.coef : 0;
+  return Math.ceil(Math.max(0, stageThreshold(s) - filled) / count) / TICKS_PER_SECOND;
 }
 
 /** era rung generators: a rung opens only once the position has reached it */
@@ -437,6 +505,48 @@ export function buyEraGen(s: GameState, idx: number): TickResult {
   return { state: next, events: [{ kind: "bought", what: gen.name }] };
 }
 
+/** Buy as many units of one unlocked era generator as the budget allows. */
+export function buyEraGenMax(s: GameState, idx: number): TickResult {
+  let current = s;
+  let bought = 0;
+  while (bought < 500) {
+    const result = buyEraGen(current, idx);
+    if (result.events.length === 0) break;
+    current = result.state;
+    bought++;
+  }
+  if (bought === 0) return { state: s, events: [] };
+  const name = eraOf(s).gens[idx]!.name;
+  return { state: current, events: [{ kind: "bought", what: `${name} ×${bought}` }] };
+}
+
+/**
+ * One conservative automatic-purchase pass. Position machines and the
+ * current era frontier have priority; only the remaining budget may fund one
+ * currency generator. This is a game convenience, not ordinal arithmetic.
+ */
+export function autoPurchase(s: GameState): GameState {
+  let current = s;
+  if (current.phase === "climb") {
+    current = buyDriverMax(current).state;
+    const reserve = driversLeft(current) > 0 ? nextDriverCost(current) * 2 : 0;
+    const tier = bestMoneyGen(current, current.money.sub(reserve));
+    return tier < 0 ? current : buyMoneyGen(current, tier).state;
+  }
+
+  const frontier = eraFrontier(current);
+  if (frontier < 0) return current;
+  const cost = eraGenCost(current, frontier);
+  // Always start the current node. Extra units only use surplus, so buying
+  // position speed cannot continually starve infrastructure of its budget.
+  if ((current.eraGens[frontier] ?? 0) === 0 || current.money.gte(bn(cost).mul(4))) {
+    current = buyEraGen(current, frontier).state;
+  }
+  const reserve = eraGenCost(current, frontier) * ((current.eraGens[frontier] ?? 0) > 0 ? 1 : 2);
+  const tier = bestMoneyGen(current, current.money.sub(reserve));
+  return tier < 0 ? current : buyMoneyGen(current, tier).state;
+}
+
 export function buyClickUpgrade(s: GameState): TickResult {
   const cost = clickUpgradeCost(s.clickLevel);
   if (s.money.lt(cost)) return { state: s, events: [] };
@@ -446,11 +556,15 @@ export function buyClickUpgrade(s: GameState): TickResult {
   return { state: next, events: [{ kind: "bought", what: "手动算力 +1" }] };
 }
 
-/** pick (or re-pick) the axiom modifier — offered at every era wall */
-export function setAxiom(s: GameState, id: string): GameState {
-  if (!axiomDef(id)) return s;
-  return { ...s, axiom: id };
+/** Select a game pacing policy at an era wall. */
+export function setPolicy(s: GameState, id: string): GameState {
+  const policy = runPolicy(id);
+  if (!policy) return s;
+  return { ...s, policy: policy.id, axiom: policy.id };
 }
+
+/** Legacy internal API name; the choice is a game policy, not an axiom. */
+export const setAxiom = setPolicy;
 
 /* ------------------------------------------------------------------ */
 /* Leaderboard score bridge                                            */
@@ -459,7 +573,7 @@ export function setAxiom(s: GameState, id: string): GameState {
 /** Monotone magnitude for the leaderboard. While climbing the position is a
  *  notation, not an ordinal, so we report the climb's own rank:
  *  the finite ladder fills [0, 5) — strictly below rank(ω) = 5 — and the
- *  ω-side ladder fills [5, 1026) — strictly below rank(Γ₀). Crossing a
+ *  ω-side ladder fills [5, 1026) — strictly below the Γ₀ route handoff. Crossing a
  *  mutation is therefore always a visible jump. */
 export function progressRank(s: GameState): number {
   if (s.phase === "era") return rank(s.alpha);

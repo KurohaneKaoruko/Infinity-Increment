@@ -4,13 +4,13 @@ import type { GameEvent } from "./engine";
 export function describeEvent(e: GameEvent): string | null {
   switch (e.kind) {
     case "mutation":
-      return `第 ${e.rung} 级「${e.name}」突破 —— ${e.mutation} 数值现在写作 ${e.notation}。旧机器全部报废。`;
-    case "converged":
-      return `序列收敛,极限到来:${e.to} —— 尾项被吸收。`;
+      return `第 ${e.rung} 级完成 · ${e.name} → ${e.notation}`;
+    case "checkpoint":
+      return `检查点 · ${e.to} 已解锁`;
     case "waypoint":
-      return `航点抵达:${e.label}`;
+      return `航点 · ${e.label}`;
     case "transcended":
-      return `冲破 ${e.wall} 之墙 —— ${e.name} 开启。旧的天花板,是新纪元的地板。`;
+      return `进入 ${e.name} · 完成 ${e.wall}`;
     case "bought":
       return `已部署:${e.what}`;
     case "clicked":

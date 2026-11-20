@@ -1,17 +1,20 @@
 /* Reactive bridge between the pure core and Solid UI.
  * Owns: game loop (10tps), autosave, offline settlement, save-code dialog,
- * theme persistence, axiom re-choice at every era wall.
+ * theme persistence, policy re-choice at every era wall.
  * Operations are all button-driven — no text commands. */
 import { createSignal } from "solid-js";
 import { initialState, fromSave, toSave, type GameState } from "../core/game/state";
 import {
-  absoluteApproach,
   approach,
+  autoPurchase,
+  bestMoneyGen,
   buyClickUpgrade,
   buyDriver,
   buyDriverMax,
   buyEraGen,
+  buyEraGenMax,
   buyMoneyGen,
+  buyMoneyGenMax,
   canBuyDriver,
   click,
   climbValue,
@@ -27,15 +30,16 @@ import {
   rungFraction,
   rungRate,
   rungReached,
-  setAxiom,
+  setPolicy,
   tick,
   type GameEvent,
 } from "../core/game/engine";
+import { settleGameOffline } from "../core/game/offline";
+import { usePulse, type PulseMode } from "../core/game/pulse";
 import { describeEvent } from "../core/game/log";
-import { equal } from "../core/ordinal/ordinal";
 import { SaveManager } from "../core/save/manager";
 import { encodeSave, decodeSave } from "../core/save/codec";
-import { settleOffline, type OfflineReport } from "../core/save/offline";
+import type { OfflineReport } from "../core/save/offline";
 import { LocalStorage } from "./platform";
 import {
   deviceId,
@@ -48,10 +52,10 @@ import {
   type LeaderboardBoard,
 } from "./leaderboard";
 import { formatMoney, formatSeconds } from "./format";
-import { TICK_MS } from "../core/game/config";
+import { PULSE_MONEY_SECONDS, PULSE_PROGRESS_SECONDS, TICK_MS } from "../core/game/config";
 
 const [state, setState] = createSignal<GameState>(initialState(Date.now()));
-const [notice, setNotice] = createSignal<string | null>(null);
+const [notice, setNoticeText] = createSignal<string | null>(null);
 const [offline, setOffline] = createSignal<OfflineReport | null>(null);
 const [axiomPrompt, setAxiomPrompt] = createSignal(false);
 const [saveDialog, setSaveDialog] = createSignal<"export" | "import" | null>(null);
@@ -67,9 +71,12 @@ const [lbStatus, setLbStatus] = createSignal<LbStatus>("hidden");
 const [lbBoard, setLbBoard] = createSignal<LeaderboardBoard>({ entries: [], total: 0, generatedAt: 0 });
 const [lbBusy, setLbBusy] = createSignal(false);
 const [lbName, setLbName] = createSignal<string>(readName(localStorage));
+// New players start hands-free; an explicit "0" still preserves the opt-out.
+const [autoMode, setAutoMode] = createSignal(localStorage.getItem("infinity.autopilot") !== "0");
 
 export { state, notice, offline, axiomPrompt, saveDialog, saveCode, theme };
 export { lbStatus, lbBoard, lbBusy, lbName };
+export { autoMode };
 
 /** the current era definition */
 export const era = () => eraOf(state());
@@ -77,9 +84,6 @@ export const era = () => eraOf(state());
 export const progress = () => approach(state());
 /** 逼近 ω 的进度(阶梯走完就是 1) */
 export const omegaMeter = () => omegaApproach(state());
-/** 逼近绝对无穷 Ω(永不到达) */
-export const absoluteMeter = () => absoluteApproach(state());
-
 /* ---------------- the climb ---------------- */
 
 export const climbing = () => state().phase === "climb";
@@ -105,11 +109,18 @@ export const machineRoom = () => driversLeft(state());
 /** price of the next machine */
 export const machineCost = () => nextDriverCost(state());
 export const machineAffordable = () => canBuyDriver(state());
-/** 算力构成的逐项拆解(底数 × 位置桥 × 转生 × 公理) */
+/** 算力构成的逐项拆解(基础 × 检查点 × 周目 × 策略) */
 export const incomeParts = () => moneyBreakdown(state());
 
 let manager: SaveManager | null = null;
 let booted = false;
+let noticeTimer: ReturnType<typeof setTimeout> | undefined;
+
+function setNotice(text: string | null): void {
+  if (noticeTimer !== undefined) clearTimeout(noticeTimer);
+  setNoticeText(text);
+  if (text !== null) noticeTimer = setTimeout(() => setNoticeText(null), 6500);
+}
 
 function mgr(): SaveManager {
   if (!manager) manager = new SaveManager(new LocalStorage());
@@ -118,7 +129,7 @@ function mgr(): SaveManager {
 
 function noticeEvent(events: GameEvent[]): void {
   const lines = events
-    .filter((e) => e.kind !== "clicked" && e.kind !== "bought")
+    .filter((e) => e.kind !== "clicked")
     .map(describeEvent)
     .filter((l): l is string => l !== null);
   if (lines.length > 0) setNotice(lines[lines.length - 1]!);
@@ -141,13 +152,33 @@ function advance(next: GameState): void {
 }
 
 function saveGame(): void {
-  mgr().save(toSave(state(), Date.now()));
+  // A hidden tab's timestamp must remain at its last settled simulation state.
+  mgr().save(toSave(state(), state().lastSeen));
 }
 
-function offlineStep(s: GameState): GameState {
-  // advance position only; currency is settled in closed form by the report
-  const r = tick(s);
-  return { ...r.state, money: s.money };
+export function toggleAutoMode(): void {
+  const next = !autoMode();
+  setAutoMode(next);
+  localStorage.setItem("infinity.autopilot", next ? "1" : "0");
+  setNotice(next ? "自动调度：开" : "自动调度：关");
+}
+
+/** Run one pure engine-side automatic-purchase pass. */
+function autoSpend(): void {
+  const before = state();
+  const current = autoPurchase(before);
+  if (current !== before) setState({ ...current, lastSeen: Date.now() });
+}
+
+function catchUp(s: GameState, now: number): void {
+  const result = settleGameOffline(s, now, autoMode());
+  setState(result.state);
+  if (result.events.some((event) => event.kind === "transcended")) setAxiomPrompt(true);
+  if (result.report.seconds >= 60) {
+    setOffline(result.report);
+  } else if (result.report.seconds >= 5) {
+    setNotice(`离线 +${formatMoney(result.report.moneyGain)} 算力`);
+  }
 }
 
 export function bootGame(): void {
@@ -157,37 +188,55 @@ export function bootGame(): void {
 
   const loaded = mgr().load();
   if (loaded) {
-    let s = fromSave(loaded);
-    const res = settleOffline(s, {
-      lastSeen: loaded.lastSeen,
-      now: Date.now(),
-      step: offlineStep,
-      isEqual: (a, b) =>
-        equal(a.alpha, b.alpha) && a.rung === b.rung && a.rungProgress === b.rungProgress,
-      moneyRate,
-    });
-    s = { ...res.state, money: res.state.money.add(res.report.moneyGain), lastSeen: Date.now() };
-    setState(s);
-    if (res.report.seconds >= 60) {
-      setOffline(res.report);
-    } else if (res.report.moneyGain.gt(0)) {
-      setNotice(`离线结算:${formatMoney(res.report.moneyGain)} 货币。`);
-    }
+    catchUp(fromSave(loaded), Date.now());
   } else {
     setState(initialState(Date.now()));
-    setNotice("新存档。从 1 开始,向着无穷。");
+    setNotice("新存档 · 开始");
   }
 
+  let lastTickAt = Date.now();
+  let suspendedAt: number | null = document.hidden ? lastTickAt : null;
   setInterval(() => {
-    const r = tick(state());
-    advance(r.state);
-    noticeEvent(r.events);
+    if (suspendedAt !== null || document.hidden) return;
+    const now = Date.now();
+    const elapsed = now - lastTickAt;
+    if (elapsed < 0) {
+      lastTickAt = now;
+      return;
+    }
+    // Sleeping tabs cannot silently lose minutes to throttled callbacks.
+    if (elapsed >= 5000) {
+      catchUp({ ...state(), lastSeen: lastTickAt }, now);
+      lastTickAt = now;
+      return;
+    }
+    const ticks = Math.floor(elapsed / TICK_MS);
+    if (ticks === 0) return;
+    let current = state();
+    const events: GameEvent[] = [];
+    for (let i = 0; i < ticks; i++) {
+      const result = tick(current);
+      current = autoMode() ? autoPurchase(result.state) : result.state;
+      events.push(...result.events);
+    }
+    lastTickAt += ticks * TICK_MS;
+    advance(current);
+    noticeEvent(events);
   }, TICK_MS);
 
-  setInterval(() => saveGame(), 15_000);
+  setInterval(() => { if (suspendedAt === null) saveGame(); }, 15_000);
   window.addEventListener("beforeunload", () => saveGame());
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) saveGame();
+    if (document.hidden) {
+      suspendedAt ??= state().lastSeen;
+      saveGame();
+    } else if (suspendedAt !== null) {
+      const now = Date.now();
+      catchUp({ ...state(), lastSeen: suspendedAt }, now);
+      suspendedAt = null;
+      lastTickAt = now;
+      saveGame();
+    }
   });
   void probeLeaderboard();
 }
@@ -265,6 +314,14 @@ export function buyGen(tier: number): void {
   }
 }
 
+export function buyGenMax(tier: number): void {
+  const r = buyMoneyGenMax(state(), tier);
+  if (r.events.length > 0) {
+    advance(r.state);
+    noticeEvent(r.events);
+  }
+}
+
 /** deploy one machine on the current rung */
 export function buyMachine(): void {
   const r = buyDriver(state());
@@ -292,12 +349,43 @@ export function buyEra(idx: number): void {
   }
 }
 
+export function buyEraMax(idx: number): void {
+  const r = buyEraGenMax(state(), idx);
+  if (r.events.length > 0) {
+    advance(r.state);
+    noticeEvent(r.events);
+  }
+}
+
 export function buyClick(): void {
   const r = buyClickUpgrade(state());
   if (r.events.length > 0) {
     advance(r.state);
     noticeEvent(r.events);
   }
+}
+
+export function buyRecommended(): void {
+  const tier = bestMoneyGen(state());
+  if (tier >= 0) buyGen(tier);
+}
+
+export function pulseAction(mode: PulseMode): void {
+  const before = state();
+  const result = usePulse(before, mode);
+  if (result.state === before) return;
+  advance(result.state);
+  if (autoMode()) autoSpend();
+  setNotice(mode === "money"
+    ? `脉冲补给 +${formatMoney(moneyRate(before).mul(PULSE_MONEY_SECONDS))} 算力`
+    : `脉冲推进 · 最多 ${PULSE_PROGRESS_SECONDS} 秒`);
+  noticeEvent(result.events);
+  saveGame();
+}
+
+/** A skipped first strategy choice remains accessible without another era wall. */
+export function openPolicyPrompt(): void {
+  if (state().phase === "era" && !state().policy) setAxiomPrompt(true);
 }
 
 /** is rung idx purchasable right now? (reached + affordable) */
@@ -315,8 +403,8 @@ export function eraRungStatus(
   };
 }
 
-export function chooseAxiom(id: string): void {
-  advance(setAxiom(state(), id));
+export function choosePolicy(id: string): void {
+  advance(setPolicy(state(), id));
   setAxiomPrompt(false);
   saveGame();
 }
@@ -342,10 +430,16 @@ export function closeSaveDialog(): void {
   setSaveDialog(null);
 }
 
+export function editSaveCode(code: string): void {
+  setSaveCode(code);
+}
+
 export function confirmImport(code: string): void {
   try {
     const data = decodeSave(code);
-    setState(fromSave(data));
+    setState({ ...fromSave(data), lastSeen: Date.now() });
+    setOffline(null);
+    setAxiomPrompt(false);
     saveGame();
     setNotice("存档码有效,进度已恢复。");
     setSaveDialog(null);
@@ -363,5 +457,5 @@ export function copySaveCode(): void {
 }
 
 export function offlineSummary(r: OfflineReport): string {
-  return `离开 ${formatSeconds(r.seconds)},序列自行推进了 ${r.ticksApplied} 步,结算 ${formatMoney(r.moneyGain)} 货币。`;
+  return `${formatSeconds(r.seconds)} 离线 · +${formatMoney(r.moneyGain)} 算力`;
 }

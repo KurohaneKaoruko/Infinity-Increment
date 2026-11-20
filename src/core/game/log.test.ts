@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { describeEvent } from "./log";
-import { AXIOMS, axiomDef } from "./config";
+import { RUN_POLICIES, runPolicy } from "./config";
 import { initialState, type GameState } from "./state";
 import { buyDriver, tick } from "./engine";
 import { eraAt } from "./eras";
@@ -21,11 +21,10 @@ describe("event log text (5.1)", () => {
     const text = describeEvent(mutation!)!;
     expect(text).toContain("乘法");
     expect(text).toContain("10^n");
-    expect(text).toContain("报废");
   });
 
-  it("the absorption beat is announced when a limit arrives", () => {
-    // the ψ era starts at Γ₀; its first rung delivers the next one
+  it("a finite coefficient gate is described as a game checkpoint", () => {
+    // the ψ era starts at the Γ₀ route handoff; its first rung unlocks the next checkpoint
     const era = eraAt(1);
     let s = funded({
       phase: "era",
@@ -39,12 +38,11 @@ describe("event log text (5.1)", () => {
       s = r.state;
       for (const ev of r.events) {
         const t = describeEvent(ev);
-        if (t && t.includes("吸收")) text = t;
+        if (t && t.includes("检查点")) text = t;
       }
     }
     expect(text).not.toBeNull();
     expect(text).toContain("ψ");
-    expect(text).toContain("吸收");
   });
 
   it("era walls announce the new notation system", () => {
@@ -64,17 +62,21 @@ describe("event log text (5.1)", () => {
   });
 });
 
-describe("axiom registry (5.5)", () => {
-  it("offers exactly two cards with distinct effects", () => {
-    expect(AXIOMS.length).toBe(2);
-    const a = AXIOMS[0]!;
-    const b = AXIOMS[1]!;
+describe("game policy registry", () => {
+  it("offers two explicit play policies with distinct tradeoffs", () => {
+    expect(RUN_POLICIES.length).toBe(2);
+    const a = RUN_POLICIES[0]!;
+    const b = RUN_POLICIES[1]!;
     expect(a.moneyMult).not.toBe(b.moneyMult);
-    expect(a.convergeMult).not.toBe(b.convergeMult);
+    expect(a.thresholdMult).not.toBe(b.thresholdMult);
   });
 
-  it("unknown axiom ids fall back to no effect", () => {
-    expect(axiomDef("nonexistent")).toBeNull();
-    expect(axiomDef(null)).toBeNull();
+  it("legacy V=L and Forcing save IDs migrate to policy aliases", () => {
+    expect(runPolicy("vl")?.id).toBe("steady");
+    expect(runPolicy("V=L")?.id).toBe("steady");
+    expect(runPolicy("forcing")?.id).toBe("sprint");
+    expect(runPolicy("Forcing")?.id).toBe("sprint");
+    expect(runPolicy("nonexistent")).toBeNull();
+    expect(runPolicy(null)).toBeNull();
   });
 });

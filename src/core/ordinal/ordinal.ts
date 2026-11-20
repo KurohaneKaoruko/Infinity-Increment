@@ -1,14 +1,14 @@
 /* Ordinal engine — public surface.
  *
- * One unified representation covers the whole ladder the game climbs:
+ * One tagged representation covers the notation families shown by the game:
  *   [0, eps_0)      Cantor Normal Form        (omega heads)
  *   [eps_0, Gam_0)  binary Veblen phi(a,b)   (veblen heads)
- *   [Gam_0, BHO]    Madore's psi             (psi heads, Omega inside args)
+ *   post-Γ₀ route     selected ψ parameter samples (Omega inside args)
  *   [omega_1, ...)  the aleph ladder         (card heads)
- *   beyond          large-cardinal axioms    (card heads, higher tiers)
+ *   beyond          selected large-cardinal-themed game symbols (card heads)
  *
  * Modules: heads.ts (types/constructors) | order.ts (comparison) |
- * canon.ts (canonicalization) | arith.ts (add/mul/pow) | rank.ts (bridge).
+ * canon.ts (canonicalization) | arith.ts (add/mul/pow) | rank.ts (score).
  * See each module header for the exact mathematical rules. */
 
 export type { Head, Ord, OrdResult, OutOfRange, Term } from "./heads";
@@ -45,4 +45,5 @@ export {
 
 export { add, mul, pow } from "./arith";
 
+/** `rank` is a leaderboard encoding, not an ordinal-theoretic rank. */
 export { BRIDGE_C, bridgeLevel, bridgeMultiplierExp, rank } from "./rank";

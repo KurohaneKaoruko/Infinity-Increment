@@ -11,7 +11,7 @@ export const OFFLINE_EFFICIENCY = 0.5;
 export interface OfflineReport {
   /** settled wall-clock seconds (after capping) */
   seconds: number;
-  /** closed-form currency gain: rate × seconds × efficiency */
+  /** Gross currency earned before automatic purchases, discounted for offline play. */
   moneyGain: BigNum;
   ticksApplied: number;
   /** true when the step function stopped changing state (wall reached) */

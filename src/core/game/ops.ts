@@ -1,32 +1,27 @@
-/* 运算阶梯 — the climb from 1 to Γ₀.
+/* 运算 / 记号路线 — a game itinerary through exact notation examples.
  *
- * The game is not "watch a number grow": it is a climb up the *operations*
- * themselves. Each rung owns one operation, and the value is never stored as
- * a magnitude — it is stored as (rung, progress) and the *notation* is
- * synthesised from that pair. 10↑↑↑↑1000 cannot be written down, let alone
- * stored in a float.
+ * Each displayed finite expression is exact, and each ordinal checkpoint is
+ * represented as an ordinal. The finite gates are pacing abstractions: the
+ * game does not claim a finite threshold proves a mathematical limit.
  *
- *   有限层(base 10)   8 级
+ *   有限记号示例(base 10)   8 级
  *     加法 → 乘法 → 乘方 → 迭代幂次(↑↑) → 五级(↑↑↑) → 六级(↑↑↑↑)
  *       → 七级(↑↑↑↑↑) → **箭头层数**
- *   ── 破级 ── 箭头记号里的 k 也需要被「算」而不是被「写」了 → ω
+ *   ── 游戏检查点 ── 对自然数取上确界 sup(n<ω)=ω
  *
- *   ω 层(base ω)      5 级
+ *   序数记号路线(base ω)      5 级
  *     后继(ω+n) → 乘法(ω·n) → 乘方(ω^n) → 迭代幂次(ω↑↑n)
- *       → **不动点层级 φ(k,0)**
- *   ── 破级 ── sup φ(k,0) = Γ₀,二元 Veblen 记号用尽,纪元链接手
+ *       → **Γ₀ 的基本序列**
+ *   ── 游戏检查点 ── 迭代 F(α)=φ_α(0) 的上确界是 Γ₀
  *
- * 为什么 ω 侧只有 5 级?因为箭头在 ω 上**塌缩**:ω↑↑↑n = ω↑↑ε₀ = ε₀
- * (ε₀ 是 ξ↦ω^ξ 的不动点,再多的箭头也推不动它)。所以 ω 之上的「多一个箭头」
- * 不再是重复上一级运算,而是**多取一次不动点** —— 运算阶梯换成了 Veblen
- * 不动点层级 φ(1,0)=ε₀、φ(2,0)=ζ₀、φ(3,0)=η₀…… 指标本身往上爬。
- * 有限层的箭头数 k 与 ω 层的 Veblen 指标 k 是同一个位置上的同一个东西。
+ * 有限 Knuth 记号与序数 Veblen 记号不是同一条数学运算链，因此这里不把
+ * “箭头数 k”与“Veblen 指标 k”宣称为同一个对象。二者只是连续的教学路线；
+ * 真正使用的数学关系是 sup(n<ω)=ω 与 sup(Fⁿ(ε₀))=Γ₀。
  *
- * Breaking a rung is a *hard mutation*: the old notation can no longer
- * express the new value, so the way the number is written changes and every
- * machine built for the previous rung is scrapped (it cannot compute at the
- * new level). That is the whole point — the player should feel the notation
- * strain and then snap.
+ * Breaking a rung changes the notation by design; deployed operators retune
+ * to the next rung instead of forcing a repetitive rebuild. It is not a claim
+ * that the previous notation is mathematically incapable of expressing the
+ * next value.
  *
  * The *count* is continuous across a mutation: breaking 加法 hands the count
  * over to 乘法, so the reading folds (1,800 → 10·1,800) instead of restarting
@@ -182,9 +177,22 @@ function omegaPlus(p: number): Ord {
   return add(OMEGA, fromNumber(Math.floor(p)));
 }
 
-/** φ(k, 0) —— 第 k 层不动点。k=1 → ε₀、2 → ζ₀、3 → η₀…… */
+/** Binary Veblen sequence φ(k, 0): ε₀, ζ₀, η₀, … (not cofinal in Γ₀). */
 export function veblenFixpoint(k: number): Ord {
   return [termVeblen(fromNumber(Math.max(1, Math.floor(k))), ZERO)];
+}
+
+/**
+ * A genuine finite fundamental sequence for Γ₀ under the convention
+ * F(α)=φ_α(0): start at ε₀ and iterate F. Its supremum is Γ₀. The game
+ * samples this sequence at a bounded number of steps; the bound is a UI/game
+ * constraint, not a claim that Γ₀ is reached at a finite index.
+ */
+export function gammaFundamental(index: number): Ord {
+  const steps = Math.max(0, Math.min(40, Math.floor(index)));
+  let value: Ord = [termVeblen(ONE, ZERO)];
+  for (let i = 0; i < steps; i++) value = [termVeblen(value, ZERO)];
+  return value;
 }
 
 /* ------------------------------------------------------------------ */
@@ -307,7 +315,7 @@ const RUNGS: Rung[] = [
     phase: "finite",
     unit: "高度",
     what: "超运算第 7 级,五个箭头。到这里,人已经不再逐层去数箭头了 —— 数的是「要写几个箭头」。",
-    mutation: "箭头个数本身开始增长:不再固定几个箭头,而是让 k 自己往上爬。",
+    mutation: "切换到参数化上箭头记号:把有限箭头个数 k 显式作为参数。",
     nextNotation: "10↑^k 3",
     threshold: 0,
     rate: DRIVER_RATE,
@@ -325,7 +333,7 @@ const RUNGS: Rung[] = [
     unit: "箭头数",
     what: "进度就是箭头个数 k。数值是 10↑^k 3 —— 一个用 k 个箭头写出来的数,而 k 本身在长大。",
     mutation:
-      "k 已经大到需要被「算」而不是被「写」—— 高德纳箭头记号用尽。再往上不是更大的数,而是另一种东西:第一个无穷序数 ω。",
+      "本游戏在此把自然数序列抽象为其上确界 ω。任何有限个箭头都仍是有效记号；箭头记号并没有数学上的耗尽点。",
     nextNotation: "ω",
     threshold: 0,
     rate: DRIVER_RATE,
@@ -359,16 +367,17 @@ const RUNGS: Rung[] = [
     glyph: "ω×",
     phase: "ordinal",
     unit: "倍数",
-    what: "反复加 ω:ω·2、ω·3、ω·4…… 序数乘法就是「加同一个极限序数很多次」。",
-    mutation: "乘的次数本身变成了极限 —— ω·ω 就是 ω²。乘法升级成乘方。",
+    what: "有限步 n 对应 ω·(n+2)。从 ω·2 起步，取 n→ω 的上确界得到 ω²。",
+    mutation: "本路线取 sup_{n<ω} ω·(n+2)=ω²，切换到以 ω² 为起点的幂序列。",
     nextNotation: "ω^n",
     threshold: 0,
     rate: DRIVER_RATE,
     baseCost: 0,
     costMult: DRIVER_COST_MULT,
     maxDrivers: 0,
-    render: (p) => `ω·${count(Math.max(1, p))}`,
-    ordinal: omegaTimes,
+    render: (p) => `ω·${count(2 + Math.floor(p))}`,
+    ordinal: (p) => omegaTimes(2 + Math.floor(p)),
+    argOf: (p) => 2 + Math.floor(p),
   },
   {
     n: 11,
@@ -377,16 +386,17 @@ const RUNGS: Rung[] = [
     glyph: "ω^",
     phase: "ordinal",
     unit: "指数",
-    what: "反复乘 ω:ω²、ω³、ω⁴…… 指数是写上去的那个数,一层就够。",
-    mutation: "指数本身顶到了极限 —— ω^ω 不再是「ω 的某次方」,而是所有次方的上限。乘方升级成迭代幂次。",
+    what: "有限自然数 n 对应 ω^(n+2)，从 ω² 开始；其上确界是 ω^ω。",
+    mutation: "取 sup_{n<ω} ω^(n+2)=ω^ω，切换到有限高度的 ω 指数塔序列。",
     nextNotation: "ω↑↑n",
     threshold: 0,
     rate: DRIVER_RATE,
     baseCost: 0,
     costMult: DRIVER_COST_MULT,
     maxDrivers: 0,
-    render: (p) => `ω^${count(Math.max(2, p))}`,
-    ordinal: omegaPow,
+    render: (p) => `ω^${count(2 + Math.floor(p))}`,
+    ordinal: (p) => omegaPow(2 + Math.floor(p)),
+    argOf: (p) => 2 + Math.floor(p),
   },
   {
     n: 12,
@@ -397,8 +407,8 @@ const RUNGS: Rung[] = [
     unit: "塔高",
     what: "ω 的指数塔:ω^ω、ω^(ω^ω)、ω^(ω^(ω^ω))…… 每加一层,就跳出上一层能写的全部范围。",
     mutation:
-      "塔高顶到极限:所有有限高的塔的上限是 ε₀ = φ(1,0)。而从这一级起,箭头在 ω 上塌缩 —— ω↑↑↑n 并不比 ε₀ 更大(ε₀ 是不动点),所以再往上的「多一个箭头」变成了「多取一次不动点」。",
-    nextNotation: "φ(k,0)",
+      "有限高度 ω 指数塔构成 ε₀ 的基本序列；游戏门槛触发时以其上确界 ε₀ = φ(1,0) 作为下一检查点。这里不对超限 Knuth 箭头作外推。",
+    nextNotation: "Fⁿ(ε₀)",
     // 进度就是塔高:每 1 点进度长高一层,塔高 2 → 42。门槛只有 40,所以 rate
     // 相应缩小(0.005/台/秒),总时长与旧写法(400 × 0.05)完全一致。
     threshold: 40,
@@ -414,22 +424,23 @@ const RUNGS: Rung[] = [
   {
     n: 13,
     id: "veblen-index",
-    name: "不动点层级",
-    glyph: "φ(k,0)",
+    name: "Γ₀ 基本序列",
+    glyph: "Fⁿ(ε₀)",
     phase: "ordinal",
-    unit: "不动点层",
-    what: "进度是不动点层级 k:φ(1,0)=ε₀、φ(2,0)=ζ₀、φ(3,0)=η₀…… 在 ω 之上,「多一个箭头」与「多一层不动点」是同一件事。",
+    unit: "迭代步",
+    what: "进度 n 取 Γ₀ 基本序列 Fⁿ(ε₀),其中 F(α)=φ_α(0)。其上确界是 Γ₀；有限进度本身仍严格低于 Γ₀。",
     mutation:
-      "指标 k 自己顶到了极限 —— sup φ(k,0) = Γ₀,二元 Veblen 记号的尽头。再往上的每一序数,都要求新的坍缩函数。纪元链接手。",
+      "Fⁿ(ε₀) 是趋于 Γ₀ 的基本序列。游戏以有限步数触发 Γ₀ 检查点；这次跳转是玩法抽象，数学上的上确界仍需 n→ω。",
     nextNotation: "Γ₀",
-    threshold: 0,
-    rate: DRIVER_RATE,
+    threshold: 40,
+    fixedThreshold: 40,
+    rate: 0.005,
     baseCost: 0,
     costMult: DRIVER_COST_MULT,
     maxDrivers: 0,
-    render: (p) => formatOrd(veblenFixpoint(p)),
-    ordinal: veblenFixpoint,
-    argOf: (p) => Math.max(1, Math.floor(p)), // 自变量就是不动点层级 k
+    render: (p) => formatOrd(gammaFundamental(p)),
+    ordinal: gammaFundamental,
+    argOf: (p) => Math.max(0, Math.floor(p)), // 基本序列索引 n
   },
 ];
 
@@ -441,26 +452,26 @@ for (let i = 0; i < RUNGS.length; i++) {
   r.maxDrivers = driverLimit(r.n);
 }
 
-/* The count carries across rungs that "fold" the previous operation
- * (加法→乘法→…, ω+→ω·), so the reading is monotone: a fresh rung starts
- * exactly where the last one stopped instead of restarting at `op(0)`.
+/* The finite base-10 examples carry their displayed argument across rungs.
+ * The ordinal route starts each new exact sequence at its mathematical
+ * checkpoint: ω → ω·2 → ω² → ω^ω → ε₀.
  *
  *   rung 1 加法   0           → 1,800
  *   rung 2 乘法   10·1,800    → 10·3,870      ← keeps counting
  *   rung 3 乘方   10^3,870    → 10^6,251
  *   …
- *   rung 9 ω+     ω           → ω + 5,506     ← ω is a new block: base resets,
- *   rung 10 ω·    ω·5,506     → ω·11,838         but ω already dominates every
- *   rung 11 ω^    ω^11,838    → ω^19,120         finite reading
+ *   rung 9 ω+     ω           → ω + N
+ *   rung 10 ω·    ω·2         → ω·(2+N)      → ω²
+ *   rung 11 ω^    ω²          → ω^(2+N)      → ω^ω
  *
- * The two "derived" rungs (ω↑↑h and φ(k,0)) are NOT carrying: their argument
- * is a tower height / fixpoint index, which is a function of progress, not a
- * count — and they still dominate the rung below them. */
-const CARRY = new Set([2, 3, 4, 5, 6, 7, 8, 10, 11]);
+ * The two "derived" rungs (ω↑↑h and the Γ₀ fundamental sequence) are NOT
+ * carrying: their argument is a tower height / sequence index, which is a
+ * function of progress, not a count — and they still dominate the rung below. */
+const CARRY = new Set([2, 3, 4, 5, 6, 7, 8]);
 for (let i = 0; i < RUNGS.length; i++) {
   const r = RUNGS[i]!;
-  // default meter: the argument is just the progress (rung 1, 9, and the two
-  // derived rungs override this in their own literal)
+  // Default meter: the argument is progress; specialized ordinal rungs set
+  // their exact offsets in their own literal.
   r.argOf ??= (p) => p;
   if (CARRY.has(r.n)) {
     const prev = RUNGS[i - 1]!;
@@ -482,7 +493,7 @@ export const CLIMB_RUNGS: readonly Rung[] = RUNGS;
 export const CLIMB_LENGTH = RUNGS.length;
 /** 最后一级(破掉它就进入纪元链) */
 export const FINAL_RUNG = CLIMB_LENGTH;
-/** 有限阶段结束于第几级(箭头用尽的那一级) */
+/** 有限记号示例段结束于第几级(之后切换到序数主题) */
 export const FINITE_LAST = RUNGS.filter((r) => r.phase === "finite").length;
 /** 阶梯尽头的墙 —— Γ₀ */
 export const CLIMB_WALL = "Γ₀";

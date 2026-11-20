@@ -107,7 +107,7 @@ describe("operation ladder (ops.ts)", () => {
     expect(CLIMB_RUNGS.slice(FINITE_LAST).every((r) => r.phase === "ordinal")).toBe(true);
   });
 
-  it("the finite side runs all the way to 'Knuth arrows run out'", () => {
+  it("the finite side ends at the authored arrow-parameter checkpoint", () => {
     // rung 8's progress *is* the arrow count k — the point where k itself
     // has to be computed rather than written
     const arrows = CLIMB_RUNGS[7]!;
@@ -119,7 +119,7 @@ describe("operation ladder (ops.ts)", () => {
     expect(CLIMB_RUNGS[6]!.id).toBe("heptation");
   });
 
-  it("the ω side runs past tetration to the Veblen fixpoint ladder", () => {
+  it("the ω side uses exact limit checkpoints through the Γ₀ sequence", () => {
     const ids = CLIMB_RUNGS.slice(FINITE_LAST).map((r) => r.id);
     expect(ids).toEqual(["omega-succ", "omega-mul", "omega-pow", "omega-tetr", "veblen-index"]);
     expect(CLIMB_RUNGS[CLIMB_LENGTH - 1]!.nextNotation).toBe("Γ₀");
@@ -132,11 +132,10 @@ describe("operation ladder (ops.ts)", () => {
     expect(renderRung(3, 0)).toBe(
       `10^${(rungThreshold(1) + rungThreshold(2)).toLocaleString("en-US")}`,
     );
-    // the ω block restarts its own count — but ω already dominates every
-    // finite reading, so there is no dip at the handover
+    // finite values are below ω; the next sequence starts at the exact limit
     expect(renderRung(9, 0)).toBe("ω");
-    expect(renderRung(10, 0)).toBe(`ω·${rungThreshold(9).toLocaleString("en-US")}`);
-    // the two "derived" rungs argue over a tower height / fixpoint index
+    expect(renderRung(10, 0)).toBe("ω·2");
+    expect(renderRung(11, 0)).toBe("ω^2");
     expect(renderRung(12, 0)).toBe("ω↑↑2");
     expect(renderRung(13, 0)).toBe("ε₀");
   });
@@ -158,11 +157,13 @@ describe("operation ladder (ops.ts)", () => {
     expect(rungArgument(3, 100)).toBe(carry + 100);
     expect(rungArgumentMax(3)).toBe(carry + rungThreshold(3));
     expect(renderRung(3, 100)).toBe(`10^${(carry + 100).toLocaleString("en-US")}`);
-    // the derived rungs meter their own argument (tower height / fixpoint index)
+    // the derived rungs meter their own argument (tower height / sequence index)
     expect(rungArgument(12, 0)).toBe(2);
     expect(rungArgumentMax(12)).toBe(42);
-    expect(rungArgument(13, 0)).toBe(1);
+    expect(rungArgument(13, 0)).toBe(0);
     expect(rungArgumentMax(13)).toBe(Math.floor(rungThreshold(13)));
+    expect(rungArgument(10, 0)).toBe(2);
+    expect(rungArgument(11, 0)).toBe(2);
   });
 
   it("ordinal rungs build strictly increasing ordinal values", () => {

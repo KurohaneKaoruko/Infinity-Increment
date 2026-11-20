@@ -20,7 +20,11 @@ export type Head =
   /** Omega^exp (the first uncountable ordinal's powers); appears inside
    *  psi arguments. Canonical exp >= 1. */
   | { readonly kind: "bigomega"; readonly exp: Ord }
-  /** cardinal kappa: `axiom` indexes CARD_AXIOMS, `idx` is its index. */
+  /**
+   * Game-abstract cardinal symbol. `axiom` indexes a selected catalog of
+   * large-cardinal themes; this is not a general notation for cardinal
+   * properties, and the catalog order is not asserted as a theorem.
+   */
   | { readonly kind: "card"; readonly axiom: number; readonly idx: Ord };
 
 export const MAX_COEF = 2 ** 53 - 1;
@@ -35,7 +39,10 @@ export type OrdResult =
   | { readonly ok: true; readonly value: Ord }
   | { readonly ok: false; readonly reason: OutOfRange };
 
-/** Axiom ladder for cardinal heads: tier order is the array order. */
+/**
+ * Selected ordered catalog of cardinal themes. The order is a content route,
+ * not a total implication hierarchy among large-cardinal properties.
+ */
 export const CARD_AXIOMS = [
   { id: "aleph", tag: "Aleph", name: "Aleph ladder" },
   { id: "inaccessible", tag: "Inacc", name: "Inaccessible cardinal" },

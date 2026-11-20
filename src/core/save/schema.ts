@@ -61,8 +61,10 @@ export interface SaveDataV3 {
   rung: number;
   /** progress accumulated on the current rung */
   rungProgress: number;
-  /** machines deployed on the current rung (scrapped on every mutation) */
+  /** machines deployed on the current rung (retuned across mutations) */
   drivers: number;
+  /** Optional extension: old v3 saves start with one pulse charge. */
+  pulseTicks?: number;
 }
 
 /** The current save format. */
@@ -117,6 +119,7 @@ export function validateV3(raw: unknown): SaveDataV3 {
     rung: expectNonNegativeInt(o.rung),
     rungProgress: expectNonNegativeNumber(o.rungProgress),
     drivers: expectNonNegativeInt(o.drivers),
+    ...(o.pulseTicks === undefined ? {} : { pulseTicks: expectNonNegativeInt(o.pulseTicks) }),
   };
 }
 

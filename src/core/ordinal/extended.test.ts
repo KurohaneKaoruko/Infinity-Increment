@@ -31,7 +31,7 @@ const ETA0: Ord = [termVeblen(n(3), ZERO)]; // eta_0
 const PHI40: Ord = [termVeblen(n(4), ZERO)]; // phi_4(0)
 const OM: Ord = [termBigomega(ONE)]; // Omega
 const OM2: Ord = [termBigomega(n(2))]; // Omega^2
-const OMOM: Ord = [termBigomega(OM)]; // Omega^Omega = Gamma_0's code
+const OMOM: Ord = [termBigomega(OM)]; // Omega^Omega, used as a ψ route argument
 const OMOM1: Ord = [termBigomega(add(OM, ONE))]; // Omega^(Omega+1)
 
 describe("binary Veblen heads", () => {
@@ -95,14 +95,14 @@ describe("Madore psi heads", () => {
   const PSI0: Ord = [termPsi(ZERO)]; // psi(0) = eps_0 (M)
   const PSI1: Ord = [termPsi(ONE)]; // psi(1) = eps_1 (M)
   const PSIOM: Ord = [termPsi(OM)]; // psi(Omega) = zeta_0 (M)
-  const GAMMA0: Ord = [termPsi(OMOM)]; // psi(Omega^Omega) = Gamma_0 (M)
+  const GAMMA0: Ord = [termPsi(OMOM)]; // selected ψ route handoff code (M)
   const SVOLIKE: Ord = [termPsi([termBigomega([termBigomega(n(3))])])]; // psi(Omega^(Omega^3))
 
   it("psi is increasing in its argument", () => {
     expect(compare(PSI0, PSI1)).toBe(-1);
     expect(compare(PSI1, PSIOM)).toBe(-1);
     expect(compare(PSIOM, GAMMA0)).toBe(-1);
-    expect(compare(GAMMA0, [termPsi(OMOM1)])).toBe(-1); // Gamma_0 < phi(1,1,0) (M)
+    expect(compare(GAMMA0, [termPsi(OMOM1)])).toBe(-1); // next selected ψ sample (M)
   });
 
   it("countable values stay below every psi value with uncountable argument", () => {
@@ -111,7 +111,7 @@ describe("Madore psi heads", () => {
     expect(compare(EPS0, PSIOM)).toBe(-1); // (era-3 notation sits below psi(Omega))
   });
 
-  it("SVO/LVO/BHO code points order correctly (M)", () => {
+  it("SVO/LVO code points order correctly (M)", () => {
     // psi(Omega^(Omega^3)) < psi(Omega^(Omega^omega)) < psi(Omega^(Omega^Omega))
     const svo = [termPsi([termBigomega([termBigomega([termOmega(ONE)])])])]; // psi(Omega^(Omega^omega))
     const lvo = [termPsi([termBigomega([termBigomega([termBigomega(ONE)])])])]; // psi(Omega^(Omega^Omega))

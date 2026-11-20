@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import {
   state,
   notice,
@@ -7,11 +7,11 @@ import {
   saveDialog,
   saveCode,
   theme,
+  autoMode,
   lbStatus,
   era,
   progress,
   omegaMeter,
-  absoluteMeter,
   climbing,
   rung,
   climbText,
@@ -26,18 +26,25 @@ import {
   bootGame,
   clickAction,
   buyGen,
+  buyGenMax,
   buyMachine,
   buyMachineMax,
   buyEra,
+  buyEraMax,
   buyClick,
-  chooseAxiom,
+  buyRecommended,
+  pulseAction,
+  openPolicyPrompt,
+  choosePolicy,
   dismissAxiomPrompt,
   dismissOffline,
   toggleTheme,
+  toggleAutoMode,
   openSaveDialog,
   closeSaveDialog,
   confirmImport,
   copySaveCode,
+  editSaveCode,
   offlineSummary,
   eraRungStatus,
 } from "./gamestore";
@@ -47,133 +54,200 @@ import {
   moneyGenCost,
   clickUpgradeCost,
   MONEY_GENS,
-  AXIOMS,
-  CLICK_UPGRADE,
+  PULSE_COST_TICKS,
+  PULSE_MAX_CHARGES,
+  PULSE_PROGRESS_SECONDS,
+  PULSE_MONEY_SECONDS,
+  RUN_POLICIES,
+  runPolicy,
 } from "../core/game/config";
-import { moneyRate, clickValue, previewMoneyGen } from "../core/game/engine";
-import { CLIMB_RUNGS, CLIMB_LENGTH, FINITE_LAST, FINAL_RUNG, rungArgument, rungArgumentMax } from "../core/game/ops";
+import { bestMoneyGen, checkpointEta, eraFrontier, moneyRate, clickValue, previewMoneyGen, stageThreshold } from "../core/game/engine";
+import { canUsePulse, pulseCharges, pulseReadyIn } from "../core/game/pulse";
+import {
+  CLIMB_RUNGS,
+  CLIMB_LENGTH,
+  FINITE_LAST,
+  FINAL_RUNG,
+  rungArgument,
+  rungArgumentMax,
+} from "../core/game/ops";
 import { STATIC_ERAS } from "../core/game/eras";
 import { CODEX } from "./codex";
 import BoardPanel from "./BoardPanel";
+import { affordIn, compactClimbValue } from "./gameview";
 
-/** Top-level pages — one visible at a time. */
 type Tab = "ops" | "shop" | "ladder" | "board" | "codex";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "ops", label: "运算" },
   { id: "shop", label: "商店" },
-  { id: "ladder", label: "阶梯" },
+  { id: "ladder", label: "路线" },
   { id: "board", label: "排行榜" },
   { id: "codex", label: "图鉴" },
 ];
 
 let booted = false;
+
+function focusDialog(element: HTMLDivElement): void {
+  queueMicrotask(() => {
+    if (element.isConnected) element.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+  });
+}
+
+function dialogKeydown(event: KeyboardEvent, close: () => void): void {
+  if (event.key === "Escape") {
+    event.preventDefault();
+    close();
+  } else if (event.key === "Tab") {
+    const dialog = event.currentTarget as HTMLDivElement;
+    const targets = [...dialog.querySelectorAll<HTMLElement>("button:not(:disabled), textarea, input, summary")]
+      .filter((element) => element.getClientRects().length > 0);
+    const first = targets[0];
+    const last = targets[targets.length - 1];
+    if (first && last && event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (first && last && !event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+}
+
 export default function App() {
   if (!booted) {
     booted = true;
     bootGame();
   }
   const [tab, setTab] = createSignal<Tab>("ops");
+  const dialogOpen = () => Boolean(offline() || axiomPrompt() || saveDialog());
   const positionLabel = () =>
     climbing()
       ? `第 ${rung().n} 级 · ${rung().name}`
-      : `${era().name} · 转生 ×${state().transcends}${state().axiom ? ` · 公理:${state().axiom}` : ""}`;
+      : `${era().name} · 周目 ${state().transcends}${runPolicy(state().policy) ? ` · ${runPolicy(state().policy)!.name}` : ""}`;
+
   return (
     <div class="crt">
       <Show when={offline()}>
-        {(r) => (
-          <div class="modal">
-            <div class="panel modal-box">
-              <div class="panel-title">▍离线结算</div>
-              <p>{offlineSummary(r())}</p>
-              <button onClick={dismissOffline}>[ 继续 ]</button>
+        {(report) => (
+          <div class="modal" role="dialog" aria-modal="true" aria-label="离线收益" ref={focusDialog} onKeyDown={(event) => dialogKeydown(event, dismissOffline)}>
+            <div class="panel modal-box compact-modal">
+              <div class="modal-head">
+                <span class="eyebrow">离线收益</span>
+                <button class="mini" onClick={dismissOffline}>关闭</button>
+              </div>
+              <div class="offline-gain">{offlineSummary(report())}</div>
+              <details class="utility-block">
+                <summary>结算规则</summary>
+                <p>收益 50% · 最多 24 小时；路线与自动采购最多模拟 1 小时。收益含自动采购已花费的算力。</p>
+              </details>
+              <button class="primary-action full" onClick={dismissOffline}>继续</button>
             </div>
           </div>
         )}
       </Show>
-      <Show when={axiomPrompt()}>
-        <div class="modal">
-          <div class="panel modal-box wide">
-            <div class="panel-title">▍公理抉择 —— 每一堵墙后,都可以重写宇宙的规则</div>
-            <div class="axiom-row">
-              <For each={AXIOMS}>
-                {(a) => (
-                  <button class="axiom-card" onClick={() => chooseAxiom(a.id)}>
-                    <div class="axiom-name">{a.name}</div>
-                    <div class="axiom-desc">{a.desc}</div>
+
+      <Show when={axiomPrompt() && !offline() && !saveDialog()}>
+        <div class="modal" role="dialog" aria-modal="true" aria-label="选择策略" ref={focusDialog} onKeyDown={(event) => dialogKeydown(event, dismissAxiomPrompt)}>
+          <div class="panel modal-box compact-modal">
+            <div class="modal-head">
+              <div>
+                <div class="eyebrow">新周目</div>
+                <h2>选择策略</h2>
+              </div>
+              <button class="mini" onClick={dismissAxiomPrompt}>稍后</button>
+            </div>
+            <div class="policy-grid">
+              <For each={RUN_POLICIES}>
+                {(policy) => (
+                  <button
+                    class="policy-option"
+                    title={policy.desc}
+                    onClick={() => choosePolicy(policy.id)}
+                  >
+                    <strong>{policy.name}</strong>
+                    <span>货币 ×{policy.moneyMult}</span>
+                    <span>门槛 ×{policy.thresholdMult}</span>
                   </button>
                 )}
               </For>
-            </div>
-            <div class="dialog-row">
-              <button onClick={dismissAxiomPrompt}>[ 保持现状 ]</button>
-            </div>
-          </div>
-        </div>
-      </Show>
-      <Show when={saveDialog()}>
-        <div class="modal">
-          <div class="panel modal-box wide">
-            <div class="panel-title">
-              ▍{saveDialog() === "export" ? "导出存档码" : "导入存档码"}
-            </div>
-            <textarea
-              class="code-area"
-              readonly={saveDialog() === "export"}
-              value={saveCode()}
-              placeholder={saveDialog() === "import" ? "在此粘贴存档码…" : ""}
-              spellcheck={false}
-            />
-            <div class="dialog-row">
-              <Show when={saveDialog() === "export"}>
-                <button onClick={copySaveCode}>[ 复制到剪贴板 ]</button>
-              </Show>
-              <Show when={saveDialog() === "import"}>
-                <button onClick={() => confirmImport((saveCode() ?? "").trim())}>[ 导入 ]</button>
-              </Show>
-              <button onClick={closeSaveDialog}>[ 关闭 ]</button>
             </div>
           </div>
         </div>
       </Show>
 
-      <header class="header panel">
+      <Show when={saveDialog()}>
+        <div class="modal" role="dialog" aria-modal="true" aria-label="存档" ref={focusDialog} onKeyDown={(event) => dialogKeydown(event, closeSaveDialog)}>
+          <div class="panel modal-box compact-modal">
+            <div class="modal-head">
+              <span class="eyebrow">{saveDialog() === "export" ? "导出存档" : "导入存档"}</span>
+              <button class="mini" onClick={closeSaveDialog}>关闭</button>
+            </div>
+            <textarea
+              class="code-area"
+              aria-label="存档码"
+              readonly={saveDialog() === "export"}
+              value={saveCode()}
+              onInput={(event) => editSaveCode(event.currentTarget.value)}
+              placeholder={saveDialog() === "import" ? "粘贴存档码" : ""}
+              spellcheck={false}
+            />
+            <div class="dialog-row">
+              <Show when={saveDialog() === "export"}>
+                <button onClick={copySaveCode}>复制</button>
+              </Show>
+              <Show when={saveDialog() === "import"}>
+                <button class="primary-action" onClick={() => confirmImport(saveCode().trim())}>导入</button>
+              </Show>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      <header class="header panel" inert={dialogOpen()}>
         <div class="header-top">
-          <span class="title">INFINITY://terminal</span>
-          <span class="dim">{positionLabel()}</span>
-          <button class="mini theme-toggle" onClick={toggleTheme} title="切换主题">
-            {theme() === "dark" ? "☀ 亮色" : "☾ 暗色"}
+          <div class="brand">
+            <span class="title">INFINITY</span>
+            <span class="brand-sub">// terminal</span>
+          </div>
+          <span class="route-chip">{positionLabel()}</span>
+          <button class="mini theme-toggle" onClick={toggleTheme} title="切换主题" aria-label="切换主题">
+            {theme() === "dark" ? "☀" : "☾"}
           </button>
         </div>
-        <div class="alpha-line">
-          <span class="dim">{climbing() ? "当前数值 = " : "α = "}</span>
-          <span
-            class={`alpha ${climbing() && rungFill() > 0.9 ? "glitch" : ""}`}
-            data-approach={progress().toFixed(2)}
+        <div class="resource-strip">
+          <div class="resource-main">
+            <span class="eyebrow">算力</span>
+            <strong>{formatMoney(state().money)}</strong>
+            <span class="rate">+{formatMoney(moneyRate(state()))}/s</span>
+          </div>
+          <button class="quick-action" onClick={clickAction}>
+            +{clickValue(state())} <span>手算</span>
+          </button>
+          <button
+            class="auto-button"
+            classList={{ active: autoMode() }}
+            aria-pressed={autoMode()}
+            onClick={toggleAutoMode}
+            title="自动购买当前目标并部署机器"
           >
-            {climbing() ? climbText() : formatOrd(state().alpha)}
-          </span>
-          <Show when={!climbing() && progress() >= 0.99}>
-            <span class="crit">  [{era().wallName} 临界 —— 表示法正在崩溃]</span>
-          </Show>
-        </div>
-        <div class="meta-line">
-          <span class="dim">算力预算 </span>{formatMoney(state().money)}
-          <span class="dim">  ·  产出 {formatMoney(moneyRate(state()))}/s  ·  手点 +{clickValue(state())}</span>
+            自动 {autoMode() ? "开" : "关"}
+          </button>
         </div>
         <Show when={notice()}>
-          <div class="notice">{notice()}</div>
+          <div class="notice" role="status" aria-live="polite">{notice()}</div>
         </Show>
-        <nav class="tabs">
+        <nav class="tabs" aria-label="主导航">
           <For each={TABS}>
-            {(t) => (
-              <Show when={t.id !== "board" || lbStatus() !== "hidden"}>
+            {(tabItem) => (
+              <Show when={tabItem.id !== "board" || lbStatus() !== "hidden"}>
                 <button
                   class="tab"
-                  classList={{ active: tab() === t.id }}
-                  onClick={() => setTab(t.id)}
+                  classList={{ active: tab() === tabItem.id }}
+                  aria-current={tab() === tabItem.id ? "page" : undefined}
+                  onClick={() => setTab(tabItem.id)}
                 >
-                  {t.label}
+                  {tabItem.label}
                 </button>
               </Show>
             )}
@@ -181,347 +255,384 @@ export default function App() {
         </nav>
       </header>
 
-      <div class="content">
+      <main class="content" inert={dialogOpen()}>
         <Show when={tab() === "ops"}>
           <Show when={climbing()} fallback={<EraOpsPanel />}>
             <ClimbPanel />
           </Show>
+          <PulsePanel />
         </Show>
-
         <Show when={tab() === "shop"}>
           <ShopPanel />
         </Show>
-
         <Show when={tab() === "ladder"}>
-          <section class="page panel">
-            <div class="panel-title">▍阶梯全景 —— 一级一种记号</div>
-            <LadderStrip />
-            <div class="panel-title">▍仪表</div>
-            <div class="omega-row">
-              <span class="dim">逼近 ω </span>
-              <span class="omega-val">{(omegaMeter() * 100).toFixed(2)}%</span>
-              <span class="dim"> —— 走完有限 {FINITE_LAST} 级就是它</span>
-            </div>
-            <div class="omega-row">
-              <span class="dim">逼近 Ω(绝对无穷) </span>
-              <span class="omega-val">{(absoluteMeter() * 100).toFixed(6)}%</span>
-              <span class="dim"> —— 永不到达</span>
-            </div>
-            <EraRoadmap />
-          </section>
+          <RoutePanel />
         </Show>
-
         <Show when={tab() === "board"}>
           <BoardPanel />
         </Show>
-
         <Show when={tab() === "codex"}>
           <CodexPanel />
         </Show>
-      </div>
+      </main>
     </div>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* 运算 · 阶梯                                                          */
-/* ------------------------------------------------------------------ */
-
 function ClimbPanel() {
-  const r = () => rung();
-  const frac = () => rungFill();
+  const current = () => rung();
+  const percent = () => Math.round(rungFill() * 100);
+  const argument = () => rungArgument(current().n, state().rungProgress).toLocaleString();
+  const argumentMax = () => rungArgumentMax(current().n).toLocaleString();
   return (
-    <section class="page panel">
-      <div class="panel-title">
-        ▍运算阶梯 · 第 {r().n} 级 / {CLIMB_LENGTH} —— {r().name} {r().phase === "finite" ? "(有限)" : "(ω 之后)"}
+    <section class="page panel game-page">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">主线 · {current().n}/{CLIMB_LENGTH}</span>
+          <h1>{current().name}</h1>
+        </div>
+        <span class="phase-tag">{current().phase === "finite" ? "有限" : "序数"}</span>
       </div>
 
-      <div class="climb-value">{climbText()}</div>
-      <div class="dim">
-        进度单位「{r().unit}」 · {rungArgument(r().n, state().rungProgress).toLocaleString()} /{" "}
-        {rungArgumentMax(r().n).toLocaleString()}
+      <div class="climb-value">{compactClimbValue(state())}</div>
+      <Show when={current().n === FINAL_RUNG}>
+        <details class="notation-details">
+          <summary>F(α) = φ_α(0) · 展开记号</summary>
+          <div>{climbText()}</div>
+        </details>
+      </Show>
+      <div class="progress-line">
+        <span>{argument()} / {argumentMax()} {current().unit}</span>
+        <strong>{percent()}%</strong>
       </div>
-      <div class="bar">
-        <div class="bar-fill" style={{ width: `${frac() * 100}%` }} />
+      <div
+        class="bar large"
+        aria-label="当前阶段进度"
+        role="progressbar"
+        aria-valuemin="0"
+        aria-valuemax="100"
+        aria-valuenow={percent()}
+      >
+        <div class="bar-fill" style={{ width: `${rungFill() * 100}%` }} />
       </div>
-      <div class="dim">
-        这一级已填 {(frac() * 100).toFixed(1)}% · 推进 +{climbSpeed().toFixed(2)} {r().unit}/s
+      <div class="run-line">
+        <span>+{climbSpeed().toFixed(2)} {current().unit}/s</span>
         <Show when={Number.isFinite(climbEta())}>
-          {" · "}按当前速度还需 {formatSeconds(climbEta())} 破级
+          <span>完成约 {formatSeconds(climbEta())}</span>
         </Show>
       </div>
 
-      <div class="hint">
-        <b>这一级在算什么:</b>
-        {r().what}
-      </div>
-
-      <div class="row">
-        <button class="fill" disabled={!machineAffordable()} onClick={buyMachine}>
-          部署机器 {machines()}/{r().maxDrivers} · {formatMoney(machineCost())} 算力
+      <div class="action-grid">
+        <button class="primary-action" disabled={!machineAffordable()} onClick={buyMachine}>
+          <span>{machineRoom() > 0 ? "部署 1 台" : "部署已满"}</span>
+          <strong>{machineRoom() > 0 ? formatMoney(machineCost()) : `${machines()}/${current().maxDrivers}`}</strong>
         </button>
-        <button class="mini" disabled={!machineAffordable()} onClick={buyMachineMax}>
-          [ 全部部署 ]
+        <button class="secondary-action" disabled={!machineAffordable()} onClick={buyMachineMax}>
+          <span>全部部署</span>
+          <small>{machines()}/{current().maxDrivers} · 空位 {machineRoom()}</small>
         </button>
       </div>
-      <div class="dim">
-        还能放 {machineRoom()} 台 · 每台 +{r().rate} {r().unit}/s
-      </div>
-      <div class="hint">
-        <b>为什么机器会消失:</b>
-        机器只服务当前这一级。破级时它们<b>全部报废</b> —— 上一级的机器算不动新一级的数。
-        货币不参与运算,它只是算力预算:决定你能同时部署几台机器。
-      </div>
-      <div class="hint">
-        <b>破级时数值不会倒退:</b>
-        计数是<b>跨级连续</b>的 —— 破级只换「施加哪种运算」,不重置计数。
-        上一级数到哪,下一级就从哪接着算,所以读数只增不减。
-      </div>
+      <Show when={machineRoom() > 0 && !machineAffordable()}>
+        <div class="afford-hint">约 {formatSeconds(affordIn(state(), machineCost()))} 可部署</div>
+      </Show>
 
-      <div class="mutation-preview">
-        <div>
-          <span class="dim">▸ 破级突变 </span>
-          {r().mutation}
-        </div>
-        <div>
-          <span class="dim">▸ 破级之后数值改写作 </span>
-          <b>{r().nextNotation}</b>
-          <Show when={r().n === FINAL_RUNG}>
-            <span class="dim"> —— 从此进入纪元链,记号由二元 Veblen φ 换成 Madore ψ</span>
-          </Show>
-        </div>
+      <div class="goal-card">
+        <span class="eyebrow">下一节点</span>
+        <strong>{current().nextNotation}</strong>
+        <span>满格后切换</span>
       </div>
-
-      <div class="panel-title">▍{CLIMB_LENGTH} 级全景</div>
-      <LadderStrip />
+      <Show when={current().n === FINAL_RUNG}>
+        <div class="milestone">Γ₀ → ψ 路线</div>
+      </Show>
     </section>
   );
 }
 
-/** 走完阶梯之后:纪元链的操作页 */
 function EraOpsPanel() {
+  const targetIndex = () => eraFrontier(state());
+  const target = () => era().gens[targetIndex()]!;
+  const targetStatus = () => eraRungStatus(targetIndex());
+  const owned = () => state().eraGens.reduce((sum, count) => sum + count, 0);
+  const targetLabel = () => targetIndex() >= 0 ? formatOrd([target().increment(state().alpha, 1)]) : "等待下一纪元";
+  const localFill = () => Math.max(0, Math.min(1, progress() * era().gens.length - targetIndex()));
   return (
-    <section class="page panel">
-      <div class="panel-title">▍{era().short} 序列 · 当前纪元({era().gens.length} 级)</div>
-      <div class="dim">
-        你已经在 ω 之外。这里每一级都是本纪元的极限序数 —— 把它的系数填满,极限就会交付下一级。
+    <section class="page panel game-page">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">纪元 · {era().short}</span>
+          <h1>{era().name}</h1>
+        </div>
+        <span class="phase-tag">周目 {state().transcends}</span>
       </div>
-      <For each={era().gens}>
-        {(g, i) => {
-          const st = () => eraRungStatus(i());
-          const unitTerm = () => formatOrd([g.increment(state().alpha, 1)]);
-          const ownedTerm = () =>
-            st().owned > 0 ? formatOrd([g.increment(state().alpha, st().owned)]) : "0";
-          return (
-            <Show
-              when={!st().locked}
-              fallback={<div class="row locked">▒▒▒▒▒▒ ▒▒▒▒▒▒▒▒ ▒▒▒▒▒▒▒▒▒▒</div>}
-            >
-              <div class="shop-item">
-              <button
-                class="row alpha"
-                classList={{ own: st().owned > 0 }}
-                onClick={() => buyEra(i())}
-                disabled={!st().affordable}
-              >
-                <span>{g.name}{st().owned > 0 ? ` ×${st().owned}` : ""}</span>
-                <span class="dim">{g.wall ? "墙" : g.waypoint ? "航点" : ""}</span>
-                <span class="cost">{formatMoney(st().cost)}</span>
-              </button>
-              <div class="shop-note">
-                <div><b>做什么:</b> 用 {g.name} 推进当前纪元的序数序列。</div>
-                <div><b>效果:</b> 每台每 tick 向 α 加入 {unitTerm()}；当前 {st().owned} 台合计贡献 {ownedTerm()}。</div>
-                <div><b>用途:</b> 累积到当前梯级的收敛阈值后交付下一阶；{g.wall ? `突破本纪元的 ${era().wallName} 之墙。` : g.waypoint ? `继续推进至航点「${g.waypoint}」。` : "逐级提高可表示的序数范围。"}</div>
-              </div>
-              </div>
-            </Show>
-          );
-        }}
-      </For>
-      <div class="hint">
-        <b>这里为什么没有机器:</b>
-        纪元链的位置是<b>累加</b>出来的 —— 每一级生成器每个 tick 都把自己的项加进 α。
-        生成的项越大,α 增长越快;填满系数,极限就到手。
+
+      <div class="era-alpha">{formatOrd(state().alpha)}</div>
+      <div class="progress-line">
+        <span>路线进度</span>
+        <strong>{(progress() * 100).toFixed(1)}%</strong>
+      </div>
+      <div class="bar large" role="progressbar" aria-label="纪元路线进度" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Number((progress() * 100).toFixed(1))}>
+        <div class="bar-fill" style={{ width: `${progress() * 100}%` }} />
+      </div>
+
+      <Show when={targetIndex() >= 0} fallback={<div class="goal-card">等待下一纪元</div>}>
+        <div class="goal-card era-target">
+          <div>
+            <span class="eyebrow">节点 {targetIndex() + 1}/{era().gens.length}</span>
+            <strong>{targetLabel()}</strong>
+            <span>{target().wall ? "纪元终点" : "当前目标"}</span>
+          </div>
+          <div class="target-owned">×{targetStatus().owned}</div>
+          <button
+            class="primary-action"
+            disabled={!targetStatus().affordable}
+            onClick={() => buyEra(targetIndex())}
+          >
+            <span>购买</span>
+            <strong>{formatMoney(targetStatus().cost)}</strong>
+          </button>
+          <button
+            class="mini"
+            disabled={!targetStatus().affordable}
+            onClick={() => buyEraMax(targetIndex())}
+          >
+            全买
+          </button>
+        </div>
+      </Show>
+
+      <div class="run-line node-progress">
+        <span>本节点 {(localFill() * 100).toFixed(0)}% · 门槛 {stageThreshold(state()).toLocaleString()}</span>
+        <span>{Number.isFinite(checkpointEta(state())) ? `约 ${formatSeconds(checkpointEta(state()))}` : "购买后开始推进"}</span>
+      </div>
+      <Show when={targetIndex() >= 0 && !targetStatus().affordable}>
+        <div class="afford-hint">约 {formatSeconds(affordIn(state(), targetStatus().cost))} 可购买</div>
+      </Show>
+      <div class="subline">已部署 {owned()} 台 · 目标：{era().wallName}</div>
+      <Show when={!state().policy}>
+        <button class="mini" onClick={openPolicyPrompt}>选择运行策略</button>
+      </Show>
+
+      <details class="node-details">
+        <summary>查看全部节点</summary>
+        <div class="node-list">
+          <For each={era().gens}>
+            {(generator, index) => {
+              const status = () => eraRungStatus(index());
+              return (
+                <Show
+                  when={!status().locked}
+                  fallback={<div class="node-row locked"><span>···</span><span>未解锁</span></div>}
+                >
+                  <div class="node-row">
+                    <span>{generator.name}</span>
+                    <span>×{status().owned}</span>
+                    <button class="mini" disabled={index() < targetIndex() || !status().affordable} onClick={() => buyEra(index())}>
+                      {index() < targetIndex() ? "已完成" : "买"}
+                    </button>
+                    <span class="cost">{formatMoney(status().cost)}</span>
+                  </div>
+                </Show>
+              );
+            }}
+          </For>
+        </div>
+      </details>
+    </section>
+  );
+}
+
+function PulsePanel() {
+  const charges = () => pulseCharges(state());
+  const supply = () => moneyRate(state()).mul(PULSE_MONEY_SECONDS);
+  return (
+    <section class="panel pulse-panel" aria-label="脉冲操作">
+      <div class="pulse-meter">
+        <strong>脉冲 {charges()}/{PULSE_MAX_CHARGES}</strong>
+        <span>{charges() === PULSE_MAX_CHARGES ? "已充满" : `${pulseReadyIn(state())}s 充能`}</span>
+        <div class="pulse-track" aria-hidden="true">
+          <div style={{ width: `${charges() === PULSE_MAX_CHARGES ? 100 : (state().pulseTicks % PULSE_COST_TICKS) / PULSE_COST_TICKS * 100}%` }} />
+        </div>
+      </div>
+      <div class="pulse-actions">
+        <button disabled={!canUsePulse(state(), "progress")} onClick={() => pulseAction("progress")} title="消耗 1 格，推进已部署机器；遇到节点即停止">
+          <strong>推进 +{PULSE_PROGRESS_SECONDS}s</strong><small>消耗 1 格</small>
+        </button>
+        <button disabled={!canUsePulse(state(), "money")} onClick={() => pulseAction("money")} title={`消耗 1 格，领取当前产出 ${PULSE_MONEY_SECONDS} 秒的算力`}>
+          <strong>补给 +{formatMoney(supply())}</strong><small>消耗 1 格</small>
+        </button>
       </div>
     </section>
   );
 }
 
-/** 阶梯一览 */
+function ShopPanel() {
+  const recommended = createMemo(() => bestMoneyGen(state()));
+  return (
+    <section class="page panel shop-page">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">经济</span>
+          <h1>商店</h1>
+        </div>
+        <strong class="total-rate">+{formatMoney(moneyRate(state()))}/s</strong>
+      </div>
+
+      <Show when={recommended() >= 0}>
+        <button class="recommended-buy" onClick={buyRecommended}>
+          <span>优先升级 · {MONEY_GENS[recommended()]!.name}</span>
+          <span>收益/价格最高 →</span>
+        </button>
+      </Show>
+
+      <div class="income-strip">
+        <span>基础 {incomeParts().base.toFixed(1)}</span>
+        <span>检查点 ×{formatMoney(incomeParts().checkpoint)}</span>
+        <span>周目 ×{incomeParts().cycle}</span>
+        <span>策略 ×{incomeParts().policy}</span>
+      </div>
+
+      <div class="purchase-list">
+        <For each={MONEY_GENS}>
+          {(generator, index) => {
+            const count = () => state().gens[index()] ?? 0;
+            const cost = () => moneyGenCost(index(), count());
+            const preview = () => previewMoneyGen(state(), index());
+            const next = () => state().gens[index() + 1] ?? 0;
+            return (
+              <div class="purchase-row" title={`${generator.what} ${generator.why}`}>
+                <button class="purchase-main" onClick={() => buyGen(index())} disabled={state().money.lt(cost())}>
+                  <span class="purchase-name">{generator.name} <small>×{count()}</small></span>
+                  <span class="purchase-gain">+{formatMoney(preview().increase)}/s</span>
+                  <span class="cost">{formatMoney(cost())}</span>
+                </button>
+                <button class="mini" onClick={() => buyGenMax(index())} disabled={state().money.lt(cost())}>全买</button>
+                <Show when={next() > 0}>
+                  <span class="purchase-boost">上层 ×{(1 + 0.25 * next()).toFixed(2)}</span>
+                </Show>
+              </div>
+            );
+          }}
+        </For>
+      </div>
+
+      <div class="subsection">
+        <div class="subsection-head">
+          <span>手动算力</span>
+          <span class="dim">Lv.{state().clickLevel} · +{clickValue(state())}/次</span>
+        </div>
+        <button
+          class="purchase-main upgrade-row"
+          onClick={() => buyClick()}
+          disabled={state().money.lt(clickUpgradeCost(state().clickLevel))}
+        >
+          <span>升级手算</span>
+          <span class="cost">{formatMoney(clickUpgradeCost(state().clickLevel))}</span>
+        </button>
+      </div>
+
+      <details class="utility-block">
+        <summary>存档</summary>
+        <div class="save-row">
+          <button class="mini" onClick={() => openSaveDialog("export")}>导出</button>
+          <button class="mini" onClick={() => openSaveDialog("import")}>导入</button>
+        </div>
+      </details>
+    </section>
+  );
+}
+
+function RoutePanel() {
+  return (
+    <section class="page panel route-page">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">路线</span>
+          <h1>{climbing() ? "运算阶梯" : "纪元链"}</h1>
+        </div>
+        <span class="phase-tag">{climbing() ? `${(omegaMeter() * 100).toFixed(0)}%` : `${(progress() * 100).toFixed(1)}%`}</span>
+      </div>
+      <Show when={climbing()} fallback={<EraRoadmap />}>
+        <LadderStrip />
+        <div class="route-foot">前 {FINITE_LAST} 级为有限记号；之后进入序数检查点。数学说明见图鉴。</div>
+      </Show>
+    </section>
+  );
+}
+
 function LadderStrip() {
-  const finished = () => state().phase === "era";
   return (
     <div class="ladder">
       <For each={CLIMB_RUNGS}>
-        {(r) => {
-          const done = () => finished() || r.n < state().rung;
-          const current = () => !finished() && r.n === state().rung;
+        {(rungDef) => {
+          const done = () => state().phase === "era" || rungDef.n < state().rung;
+          const current = () => state().phase === "climb" && rungDef.n === state().rung;
           return (
             <div class="ladder-rung" classList={{ done: done(), current: current() }}>
-              <span class="ladder-n">{String(r.n).padStart(2, "0")}</span>
-              <span class="ladder-glyph">{r.glyph}</span>
-              <span class="ladder-name">
-                {r.name}
-                <span class="dim"> → {r.nextNotation}</span>
-              </span>
-              <span class="ladder-mark">{done() ? "✔" : current() ? "▸" : "·"}</span>
+              <span class="ladder-n">{String(rungDef.n).padStart(2, "0")}</span>
+              <span class="ladder-glyph">{rungDef.glyph}</span>
+              <span class="ladder-name">{rungDef.name}<span class="dim"> → {rungDef.nextNotation}</span></span>
+              <span class="ladder-mark">{done() ? "✓" : current() ? "▸" : "·"}</span>
             </div>
           );
         }}
       </For>
-      <div class="dim">
-        前 {FINITE_LAST} 级是有限超运算 —— 一路到「高德纳箭头也写不下」;之后{" "}
-        {CLIMB_LENGTH - FINITE_LAST} 级是同一个阶梯架在 ω 上,终点是 Γ₀。
-      </div>
     </div>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* 商店                                                                */
-/* ------------------------------------------------------------------ */
-
-function ShopPanel() {
-  return (
-    <section class="page panel">
-      <div class="panel-title">▍货币生成器 · 算力预算</div>
-      <div class="dim">
-        货币不改变你的数值,它买的是<b>机器</b>。产出越高,同一级能同时部署的机器越多。
-      </div>
-      <div class="income-parts">
-        <div>
-          底数 {incomeParts().base.toFixed(2)}/s
-          <span class="dim"> (全部机器之和)</span>
-        </div>
-        <div>
-          × 位置桥 {formatMoney(incomeParts().position)}
-          <span class="dim">
-            {" "}
-            {climbing() ? "(每破一级 ×16,一级之内再抬到 ×1.5)" : "(由 α 的量级决定)"}
-          </span>
-        </div>
-        <div>× 转生 {incomeParts().prestige} × 公理 {incomeParts().axiom}</div>
-        <div class="income-total">= 总产出 {formatMoney(incomeParts().total)}/s</div>
-      </div>
-      <For each={MONEY_GENS}>
-        {(g, i) => {
-          const count = () => state().gens[i()] ?? 0;
-          const cost = () => moneyGenCost(i(), count());
-          const next = () => state().gens[i() + 1] ?? 0;
-          const preview = () => previewMoneyGen(state(), i());
-          return (
-            <div class="shop-item">
-              <button class="row" onClick={() => buyGen(i())} disabled={state().money.lt(cost())}>
-                <span>
-                  {g.name} ×{count()}
-                </span>
-                <span class="dim">+{formatMoney(preview().increase)}/s</span>
-                <span class="cost">{formatMoney(cost())}</span>
-              </button>
-              <div class="shop-note">
-                <div><b>做什么:</b> {g.what}</div>
-                <div><b>效果:</b> {g.affects}；当前产出 {formatMoney(preview().current)}/s → 购买后 {formatMoney(preview().afterPurchase)}/s（实际 +{formatMoney(preview().increase)}/s）</div>
-                <div><b>用途:</b> {g.why}</div>
-                <Show when={next() > 0}>
-                  <div class="dim">当前被上层 {next()} 台放大 ×{(1 + 0.25 * next()).toFixed(2)}</div>
-                </Show>
-              </div>
-            </div>
-          );
-        }}
-      </For>
-
-      <div class="panel-title">▍手动算力</div>
-      <div class="shop-item">
-        <button
-          class="row"
-          onClick={() => buyClick()}
-          disabled={state().money.lt(clickUpgradeCost(state().clickLevel))}
-        >
-          <span>{CLICK_UPGRADE.name} Lv.{state().clickLevel}</span>
-          <span class="dim">+{clickValue(state())}/次</span>
-          <span class="cost">{formatMoney(clickUpgradeCost(state().clickLevel))}</span>
-        </button>
-        <div class="shop-note">
-          <div><b>做什么:</b> {CLICK_UPGRADE.what}</div>
-          <div><b>效果:</b> 每次点击 {clickValue(state())} → {clickValue({ ...state(), clickLevel: state().clickLevel + 1 })} 货币（+{clickValue({ ...state(), clickLevel: state().clickLevel + 1 }) - clickValue(state())}/次）</div>
-          <div><b>影响:</b> {CLICK_UPGRADE.affects}</div>
-          <div><b>用途:</b> {CLICK_UPGRADE.why}</div>
-        </div>
-      </div>
-
-      <div class="panel-title">▍存档</div>
-      <div class="save-row">
-        <button class="mini" onClick={() => openSaveDialog("export")}>导出存档码</button>
-        <button class="mini" onClick={() => openSaveDialog("import")}>导入存档码</button>
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* 阶梯 · 纪元链                                                        */
-/* ------------------------------------------------------------------ */
-
-/** the endless chain of notation systems, walked so far */
 function EraRoadmap() {
-  const idx = () => state().era;
-  const climbingNow = () => state().phase === "climb";
+  const index = () => state().era;
   return (
-    <div class="roadmap">
-      <div class="panel-title">▍纪元链(无穷)</div>
-      <div class="roadmap-item" classList={{ current: climbingNow() }}>
-        <span class="dim">{climbingNow() ? "▸" : "✔"}</span> 运算阶梯 · 1 → ω → Γ₀
-        <span class="dim"> → Γ₀</span>
+    <div class="roadmap compact-roadmap">
+      <div class="roadmap-item" classList={{ current: state().phase === "climb" }}>
+        <span>{state().phase === "climb" ? "▸" : "✓"}</span> 运算阶梯 <small>Γ₀</small>
       </div>
       <For each={STATIC_ERAS.slice(1)}>
-        {(e, i) => {
-          const n = i() + 1;
+        {(definition, offset) => {
+          const eraIndex = offset() + 1;
           return (
-            <div class="roadmap-item" classList={{ done: n < idx(), current: !climbingNow() && n === idx() }}>
-              <span class="dim">{n < idx() ? "✔" : n === idx() && !climbingNow() ? "▸" : "·"}</span> {e.name}
-              <span class="dim"> → {e.wallName}</span>
+            <div class="roadmap-item" classList={{ done: eraIndex < index(), current: eraIndex === index() }}>
+              <span>{eraIndex < index() ? "✓" : eraIndex === index() ? "▸" : "·"}</span>
+              {definition.short} <small>{definition.wallName}</small>
             </div>
           );
         }}
       </For>
-      <div
-        class="roadmap-item"
-        classList={{
-          done: idx() > STATIC_ERAS.length - 1,
-          current: !climbingNow() && idx() >= STATIC_ERAS.length,
-        }}
-      >
-        <span class="dim">{!climbingNow() && idx() >= STATIC_ERAS.length ? "▸" : "·"}</span> 纪元 IV+ ·
-        大基数无尽阶梯
-        <span class="dim"> → Ω(不可达)</span>
+      <div class="roadmap-item" classList={{ current: index() >= STATIC_ERAS.length }}>
+        <span>{index() >= STATIC_ERAS.length ? "▸" : "·"}</span> 大基数主题路线 <small>∞</small>
       </div>
     </div>
   );
 }
 
 function CodexPanel() {
-  const [sel, setSel] = createSignal<string | null>("omega");
-  const entry = () => CODEX.find((c) => c.id === sel()) ?? null;
+  const [selected, setSelected] = createSignal<string | null>("omega");
+  const entry = () => CODEX.find((item) => item.id === selected()) ?? null;
   return (
-    <div class="codexpanel panel page">
-      <div class="panel-title">▍图鉴(点击术语查看)</div>
+    <section class="codexpanel panel page">
+      <div class="section-head">
+        <div>
+          <span class="eyebrow">参考</span>
+          <h1>图鉴</h1>
+        </div>
+        <span class="dim">数学说明放在这里</span>
+      </div>
       <div class="codex-list">
         <For each={CODEX}>
-          {(c) => (
+          {(item) => (
             <button
               class="mini codex-term"
-              classList={{ active: sel() === c.id }}
-              onClick={() => setSel(c.id)}
+              classList={{ active: selected() === item.id }}
+              onClick={() => setSelected(item.id)}
             >
-              {c.title}
+              {item.title}
             </button>
           )}
         </For>
       </div>
       <Show when={entry()}>
-        {(e) => <div class="codex-text">{e().text}</div>}
+        {(item) => <div class="codex-text">{item().text}</div>}
       </Show>
-    </div>
+    </section>
   );
 }

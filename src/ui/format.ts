@@ -12,9 +12,14 @@ export function formatMoney(d: BigNum | number): string {
       .toString()
       .replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   }
-  const e = Math.floor(v.log10());
+  let e = Math.floor(v.log10());
   const mantissa = v.div(bn(10).pow(e)).toNumber();
-  const m = mantissa.toFixed(2).replace(/\.?0+$/, "");
+  let rounded = Number(mantissa.toFixed(2));
+  if (rounded >= 10) {
+    rounded = 1;
+    e++;
+  }
+  const m = rounded.toFixed(2).replace(/\.?0+$/, "");
   return `${m}e${e}`;
 }
 

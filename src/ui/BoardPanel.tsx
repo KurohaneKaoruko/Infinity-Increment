@@ -30,7 +30,7 @@ export default function LeaderboardPanel() {
               class="mini"
               disabled={lbBusy()}
               onClick={() => void submitToLeaderboard()}
-              title="上传当前进度(序数位置 + 转生数)"
+              title="上传当前进度(路线位置 + 周目数)"
             >
               {lbBusy() ? "上传中…" : "[ 上传进度 ]"}
             </button>
@@ -43,7 +43,7 @@ export default function LeaderboardPanel() {
                   <span class="lb-name">{e.name}</span>
                   <span class="lb-rank">{formatRank(e.rank)}</span>
                   <span class="lb-meta dim">
-                    {eraLabel(e.era)} · 转生 ×{e.transcends} · α={e.alpha}
+                    {eraLabel(e.era)} · 周目 ×{e.transcends} · α={e.alpha}
                   </span>
                 </div>
               )}

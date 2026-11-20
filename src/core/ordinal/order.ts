@@ -16,8 +16,10 @@
  *                                 inside one era's play.
  *   countable (omega/phi/psi)   < uncountable (Omega^d, kappa)
  *   Omega^d  vs Omega^d'        -> compare(d, d')
- *   Omega^d  < kappa (tier order), kappa(t,i) vs kappa(t',i'):
- *                                 tier first, then compare(i, i').
+ *   Omega^d  < tagged card symbols, kappa(t,i) vs kappa(t',i'):
+ *                                 game catalog tier, then compare(i, i').
+ * The final rule is an explicit game convention, not a theorem about large
+ * cardinal properties, many of which are not linearly ordered by implication.
  */
 import { ALEPH_TIER, type Head, type Ord, type Term } from "./heads";
 

@@ -8,6 +8,7 @@ import type { SaveDataV3 } from "./schema";
 import { fromNumber, equal, height } from "../ordinal/ordinal";
 import { fromJSON, toJSON } from "../ordinal/serialize";
 import { eraAt } from "../game/eras";
+import { fromSave } from "../game/state";
 import { bn } from "../bignum";
 
 function makeSave(overrides: Partial<SaveDataV3> = {}): SaveDataV3 {
@@ -86,7 +87,7 @@ describe("migrations (3.2)", () => {
     expect(v3.era).toBe(1);
     expect(v3.phase).toBe("era");
     expect(v3.eraGens).toEqual([1, 0, 0]);
-    // α sat below the new era's floor, so it is lifted to Γ₀
+    // α sat below the new era's floor, so it is lifted to the ψ route handoff
     expect(equal(fromJSON(v3.alpha), eraAt(1).startAlpha)).toBe(true);
   });
 
@@ -146,6 +147,12 @@ describe("save manager (3.3)", () => {
 });
 
 describe("save codes (3.4)", () => {
+  it("loads legacy policy labels into the canonical policy field", () => {
+    const s = fromSave(makeSave({ axiom: "V=L" }));
+    expect(s.policy).toBe("steady");
+    expect(s.axiom).toBe("steady");
+  });
+
   it("round-trips a save", () => {
     const s = makeSave({ axiom: "V=L", transcends: 2 });
     const decoded = decodeSave(encodeSave(s));

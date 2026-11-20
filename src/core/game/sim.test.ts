@@ -6,6 +6,7 @@
 import { describe, it, expect } from "vitest";
 import { initialState, type GameState } from "./state";
 import {
+  autoPurchase,
   buyDriver,
   buyEraGen,
   buyClickUpgrade,
@@ -18,6 +19,8 @@ import {
   rungReached,
   tick,
 } from "./engine";
+import { canUsePulse, usePulse } from "./pulse";
+import { PULSE_COST_TICKS } from "./config";
 import { eraAt } from "./eras";
 import { MONEY_GENS, TICKS_PER_SECOND, moneyGenCost } from "./config";
 import { bn } from "../bignum";
@@ -141,7 +144,7 @@ describe("operation ladder pacing (task 12)", () => {
 });
 
 describe("era chain pacing (4.6)", () => {
-  it("era I (ψ → BHO) breaks its wall in a sane window", () => {
+  it("era I (ψ parameter samples) breaks its wall in a sane window", () => {
     const minutes = play(1, 220 * 60) / 60;
     expect(minutes).toBeGreaterThanOrEqual(MIN_PER_ERA);
     expect(minutes).toBeLessThanOrEqual(MAX_PER_ERA);
@@ -171,4 +174,46 @@ describe("era chain pacing (4.6)", () => {
     expect(minutes).toBeGreaterThan(0);
     expect(minutes).toBeLessThanOrEqual(MAX_PER_ERA);
   }, 300_000);
+});
+
+describe("the actual automatic-play loop", () => {
+  function automaticRun(start: GameState, budgetSeconds: number, active = false, firstCheckpoint = true): number {
+    let s = start;
+    for (let i = 0; i < budgetSeconds * TICKS_PER_SECOND; i++) {
+      s = autoPurchase(tick(s).state);
+      if (active && i % PULSE_COST_TICKS === 0) {
+        const mode = canUsePulse(s, "progress") ? "progress" : "money";
+        s = autoPurchase(usePulse(s, mode).state);
+      }
+      if (s.era > start.era || s.phase !== start.phase || (firstCheckpoint && start.rung === 1 && s.rung > 1)) {
+        return (i + 1) / TICKS_PER_SECOND;
+      }
+    }
+    return Infinity;
+  }
+
+  it("starts without clicking and gives active pulses a measurable advantage", () => {
+    const idle = automaticRun(initialState(), 600);
+    const active = automaticRun(initialState(), 600, true);
+    expect(idle).toBeLessThan(6 * 60);
+    expect(active).toBeLessThan(idle - 10);
+  });
+
+  it("reaches the era chain from a fresh save without input", () => {
+    const elapsed = automaticRun(initialState(), 150 * 60, false, false);
+    expect(elapsed).toBeGreaterThan(30 * 60);
+    expect(elapsed).toBeLessThan(150 * 60);
+  });
+
+  it.each([1, 2, 3])("continues through era %i with the real automatic buyer", (index) => {
+    const era = eraAt(index);
+    const start = {
+      ...initialState(), phase: "era" as const, era: index,
+      alpha: era.startAlpha, eraGens: era.gens.map(() => 0),
+      transcends: index, gens: MONEY_GENS.map(() => 30),
+    };
+    const elapsed = automaticRun(start, 200 * 60);
+    expect(elapsed).toBeGreaterThan(30);
+    expect(elapsed).toBeLessThan(200 * 60);
+  });
 });

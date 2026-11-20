@@ -1,19 +1,17 @@
-/* Era table — the ladder of notation systems the game climbs.
+/* Era table — the authored notation route used by the game.
  *
  * Each era owns a generator family with three closures:
  *   increment(alpha)  — the term added per owned unit per tick
- *   saturates(alpha)  — does the current lead sit at this rung, filled?
- *   deliver(alpha)    — the limit delivered on saturation (or the wall)
+ *   thresholdReached(alpha) — has the game-specific coefficient gate been met?
+ *   nextCheckpoint(alpha)   — the next authored position after that gate
  *
- * Convergence is mathematically real where it can be (sup of the rung is
- * the next rung); wall rungs and era jumps are the notation's practical
- * boundary.
+ * Coefficient thresholds and checkpoint jumps are game rules. They are not
+ * claims that a finite sequence converges to the next ordinal.
  *
- * Era 0 is not a generator ladder at all: it is the *operation climb*
- * (ops.ts), which walks 1 → ω → Γ₀ — the finite hyperoperations run out of
- * Knuth arrows, then the ω-side runs out of binary Veblen. From Γ₀ on, the
- * eras below take over: ψ (→ BHO), ℵ (→ the first inaccessible), and then
- * the endless procedural large-cardinal ladder (one EraDef per axiom tier). */
+ * Era 0 is not a generator ladder at all: it is the authored itinerary in
+ * ops.ts. It uses exact ordinal checkpoints at ω and Γ₀, then switches to
+ * further notation systems. The switch is game content, not a theorem that
+ * one notation system has been mathematically exhausted. */
 import {
   ONE,
   OMEGA,
@@ -38,9 +36,9 @@ export interface GenDef {
   /** flat cost in money for the first unit; extra units scale by ERA_UNIT_COST_MULT */
   cost: number;
   increment: (alpha: Ord, count: number) => Term;
-  saturates: (alpha: Ord, converge: number) => boolean;
-  deliver: (alpha: Ord) => Ord;
-  /** wall rungs fire the era wall instead of delivering a limit */
+  thresholdReached: (alpha: Ord, threshold: number) => boolean;
+  nextCheckpoint: (alpha: Ord) => Ord;
+  /** wall rungs fire the era wall instead of a normal game checkpoint */
   wall?: boolean;
   /** milestone label shown when the rung is first reached */
   waypoint?: string;
@@ -52,11 +50,11 @@ export interface EraDef {
   short: string;
   /** position when the era begins (after the previous transcendence) */
   startAlpha: Ord;
-  /** the wall ordinal this era breaks at (fictional practical boundary) */
+  /** named milestone at the end of this authored game route */
   wallName: string;
   wallDesc: string;
-  /** coefficient threshold for convergence */
-  converge: number;
+  /** finite coefficient gate used by this game route */
+  threshold: number;
   gens: GenDef[];
   /** dynamic eras rebuild gens per large-cardinal tier */
   dynamic?: boolean;
@@ -68,7 +66,9 @@ const nat = fromNumber;
 const BIGOMEGA: Ord = [termBigomega(ONE)]; // Omega
 const EPS0: Ord = [termVeblen(ONE, ZERO)]; // epsilon_0
 const ZETA0: Ord = [termVeblen(nat(2), ZERO)]; // zeta_0
-const GAMMA0: Ord = [termPsi([termBigomega(BIGOMEGA)])]; // psi(Omega^Omega)
+// Internal handoff code for the ψ era. The game labels the preceding route
+// Γ₀, but this ψ expression is not presented as a definition of Γ₀.
+const GAMMA0_ROUTE_CODE: Ord = [termPsi([termBigomega(BIGOMEGA)])];
 
 /** omega^k for a natural k. */
 function wPow(k: number): Ord {
@@ -92,8 +92,8 @@ export const ERA_CLIMB: EraDef = {
   startAlpha: ZERO,
   wallName: "Γ₀",
   wallDesc:
-    "记号的尽头。有限侧:科学计数法、指数塔、葛立恒式箭头一路用尽,箭头个数 k 自己开始增长。ω 侧:箭头在不动点上塌缩,「多一个箭头」变成「多取一次不动点」,于是 φ(1,0)=ε₀、φ(2,0)=ζ₀…… 而 sup φ(k,0) = Γ₀ —— 二元 Veblen 到此为止。",
-  converge: 0,
+    "游戏路线的两个数学检查点：sup(n<ω)=ω；对 F(α)=φ_α(0) 从 ε₀ 开始迭代，其上确界是 Γ₀。有限门槛和换记号是玩法抽象，不是“绝对无穷”的进度。",
+  threshold: 0,
   gens: [],
 };
 
@@ -117,7 +117,9 @@ const boPlus = (e: Ord, k: number): Ord => bo(add(e, nat(k)));
 const boSum3 = (a: Ord, b: Ord, k: number): Ord => bo(add(add(a, b), nat(k)));
 
 /** psi-argument ladder: every next label strictly exceeds the previous.
- * Climb: Ω+2 … Ω+ω^ω … Ω·2 … Ω² … Ω^ω (SVO) … Ω^Ω (LVO) … Ω^(ε_{Ω+1}) (BHO). */
+ * The selected samples climb through Ω^(Ω+2), Ω^(Ω+ω^ω), Ω^(Ω·2),
+ * Ω^(Ω²), Ω^(Ω^ω) (SVO), Ω^(Ω^Ω) (LVO), and finally
+ * Ω^(Ω^(Ω^Ω)). */
 const PSI_LABELS: { label: Ord; note?: string }[] = [
   { label: boPlus(BIGOMEGA, 2) }, // Omega^(Omega+2)
   { label: boPlus(BIGOMEGA, 4) },
@@ -152,11 +154,11 @@ const PSI_LABELS: { label: Ord; note?: string }[] = [
   { label: boSum3(OOm, O2, 2) },
   { label: boSum3(OOm, Ow, 2) }, // Omega^(Omega^Omega+Omega^omega+2)
   { label: boSum3(OOm, OOm, 2) }, // Omega^(Omega^Omega*2+2)
-  { label: bo(bo(OOm)) }, // Omega^(Omega^(Omega^Omega)) — the BHO-region wall
+  { label: bo(bo(OOm)), note: "endpoint" },
 ];
 
 const PSI_BASE_COST = 8e42;
-// the bridge is flat across rungs 0–25 (income 2^120), so costs must NOT
+// the initial ψ bridge is around 2^124, so costs must NOT
 // outgrow it there: growth 1.12 keeps every rung a few minutes of income
 const PSI_COST_GROWTH = 1.12;
 
@@ -164,11 +166,11 @@ export const ERA_PSI: EraDef = {
   id: "psi",
   name: "纪元 II · 坍缩函数",
   short: "ψ",
-  startAlpha: GAMMA0,
-  wallName: "BHO",
+  startAlpha: GAMMA0_ROUTE_CODE,
+  wallName: "ψ(Ω^(Ω^(Ω^Ω)))",
   wallDesc:
-    "ψ 的参数已经含住整个 Ω 层谱 —— 可数序数的记述逼近巴赫曼-霍华德序数(BHO = ψ(ε_{Ω+1}))的边界。再往上的每一序数,都先要成为不可数。",
-  converge: 1200,
+    "此路线的最后一个参数样本是 Ω^(Ω^(Ω^Ω))。它不是 BHO 的标准定义 ψ(ε_{Ω+1})；本游戏只把它作为选定的 ψ 参数终点，不宣称穷尽所有可数序数。",
+  threshold: 1200,
   gens: PSI_LABELS.map(({ label, note }, j): GenDef => ({
     id: `psi${j}`,
     name:
@@ -176,28 +178,32 @@ export const ERA_PSI: EraDef = {
         ? "ψ 序列 · SVO 航点(小 Veblen 序数)"
         : note === "lvo"
           ? "ψ 序列 · LVO 航点(大 Veblen 序数)"
+          : note === "endpoint"
+            ? `ψ 路线终点 · ψ(${formatOrd(label)})`
           : `ψ 梯级 ${j} · ψ(${formatOrd(label)})`,
     cost: PSI_BASE_COST * PSI_COST_GROWTH ** j,
     increment: (_alpha, count) => termPsi(label, count),
-    saturates: (a, converge) => {
+    thresholdReached: (a, threshold) => {
       const t = leadHead(a);
-      return !!t && t.head.kind === "psi" && equal(t.head.arg, label) && t.coef >= converge;
+      return !!t && t.head.kind === "psi" && equal(t.head.arg, label) && t.coef >= threshold;
     },
-    deliver: () => [termPsi(PSI_LABELS[j + 1]!.label)],
+    nextCheckpoint: () => [termPsi(PSI_LABELS[j + 1]!.label)],
     wall: j === PSI_LABELS.length - 1,
     waypoint:
       note === "svo"
         ? "SVO · 小 Veblen 序数 ψ(Ω^(Ω^ω))"
         : note === "lvo"
           ? "LVO · 大 Veblen 序数 ψ(Ω^(Ω^Ω))"
+          : note === "endpoint"
+            ? "ψ 参数样本路线终点"
           : undefined,
   })),
 };
 
 /* ---------------- era 2: the aleph layer ---------------- */
 
-// Index ladder for the alephs: 1, 2, 3, 4, omega, omega^2, omega^omega,
-// epsilon_0, zeta_0, Gamma_0 — the countable indices, then the wall.
+// A finite authored sample of aleph indices. It is not the set of all
+// countable ordinals; the game deliberately switches notation at its wall.
 const ALEPH_INDICES: Ord[] = [
   nat(1),
   nat(2),
@@ -208,7 +214,7 @@ const ALEPH_INDICES: Ord[] = [
   [termOmega(OMEGA)],
   EPS0,
   ZETA0,
-  GAMMA0,
+  GAMMA0_ROUTE_CODE,
 ];
 
 const ALEPH_BASE_COST = 2e60;
@@ -221,27 +227,27 @@ export const ERA_ALEPH: EraDef = {
   startAlpha: [termCard(0, nat(1))], // aleph_1 — the first uncountable ordinal
   wallName: "第一不可达基数",
   wallDesc:
-    "阿列夫的指标已经可数穷尽 —— ℵ_δ 对任何可数 δ 都够不到正则强极限。第一个不可达基数不是任何阿列夫序列的极限,它要求一条新公理。",
-  converge: 2400,
+    "本游戏选取有限个 ℵ_δ 样本后切换到大基数路线。数学上不存在“有限样本穷尽所有可数指标”这一结论；第一不可达基数是另一个大基数性质，不是由本路线有限步算出。",
+  threshold: 2400,
   gens: ALEPH_INDICES.map((idx, j): GenDef => ({
     id: `al${j}`,
     name: `阿列夫梯级 ${j} · ${formatOrd([termCard(0, idx)])}`,
     cost: ALEPH_BASE_COST * ALEPH_COST_GROWTH ** j,
     increment: (_alpha, count) => termCard(0, idx, count),
-    saturates: (a, converge) => {
+    thresholdReached: (a, threshold) => {
       const t = leadHead(a);
       if (!t || t.head.kind !== "card" || t.head.axiom !== 0) return false;
-      return equal(t.head.idx, idx) && t.coef >= converge;
+      return equal(t.head.idx, idx) && t.coef >= threshold;
     },
-    deliver: () => [termCard(0, ALEPH_INDICES[j + 1]!)],
+    nextCheckpoint: () => [termCard(0, ALEPH_INDICES[j + 1]!)],
     wall: j === ALEPH_INDICES.length - 1,
     waypoint:
       idx === OMEGA
         ? "ℵ_ω —— 指标越过 ω"
         : idx === EPS0
           ? "ℵ_{ε₀} —— 可数序数成为基数指标"
-          : idx === GAMMA0
-            ? "ℵ_{Γ₀} —— 可数指标的尽头"
+          : idx === GAMMA0_ROUTE_CODE
+            ? "ℵ_{Γ₀} —— 本路线的最后样本"
             : undefined,
   })),
 };
@@ -253,13 +259,13 @@ const LARGE_BASE_COST = 1.5e62;
 const LARGE_COST_GROWTH = 1.3;
 const LARGE_CONVERGE = 3000;
 
-/** Human name of axiom tier t (authored table, then procedural). */
+/** Human name of the selected large-cardinal route tier. */
 export function axiomTierName(tier: number): string {
   const ax = CARD_AXIOMS[tier];
-  return ax ? ax.name : `第 ${tier} 级大基数公理`;
+  return ax ? ax.name : `第 ${tier} 级大基数主题`;
 }
 
-/** One era per large-cardinal axiom tier; the chain never ends. */
+/** One authored game era per selected large-cardinal tier; the route is open-ended. */
 export function largeCardinalEra(tier: number): EraDef {
   const ax = CARD_AXIOMS[tier];
   const first: Ord = [termCard(tier, ZERO)];
@@ -269,8 +275,8 @@ export function largeCardinalEra(tier: number): EraDef {
     short: ax ? ax.tag : `κ${tier}`,
     startAlpha: first,
     wallName: axiomTierName(tier + 1),
-    wallDesc: `第 ${tier} 级公理的最后一个序号也已经填满 —— 层谱攀上了 ${axiomTierName(tier + 1)}。公理没有尽头:每一层「更大」都以上一层为起点。`,
-    converge: LARGE_CONVERGE,
+    wallDesc: `本游戏的第 ${tier} 层大基数路线已完成，下一检查点标为 ${axiomTierName(tier + 1)}。这是一条选定的数学主题路线，不表示存在唯一的“大基数大小序列”。`,
+    threshold: LARGE_CONVERGE,
     dynamic: true,
     gens: Array.from({ length: LARGE_LEVELS }, (_, j): GenDef => {
       const idx = nat(j + 1);
@@ -279,12 +285,12 @@ export function largeCardinalEra(tier: number): EraDef {
         name: `${axiomTierName(tier)} · 第 ${j + 1} 个`,
         cost: LARGE_BASE_COST * LARGE_COST_GROWTH ** j,
         increment: (_alpha, count) => termCard(tier, idx, count),
-        saturates: (a, converge) => {
+        thresholdReached: (a, threshold) => {
           const t = leadHead(a);
           if (!t || t.head.kind !== "card" || t.head.axiom !== tier) return false;
-          return equal(t.head.idx, idx) && t.coef >= converge;
+          return equal(t.head.idx, idx) && t.coef >= threshold;
         },
-        deliver: () => [termCard(tier, nat(j + 2))],
+        nextCheckpoint: () => [termCard(tier, nat(j + 2))],
         wall: j === LARGE_LEVELS - 1,
         waypoint: j === 0 ? `${axiomTierName(tier)} 抵达` : undefined,
       };

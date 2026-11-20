@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import { initialState, type GameState } from "./state";
 import {
-  absoluteApproach,
   approach,
+  autoPurchase,
+  bestMoneyGen,
   buyDriver,
   buyDriverMax,
   buyEraGen,
@@ -18,6 +19,8 @@ import {
   eraGenCost,
   eraOf,
   eraProgress,
+  eraFrontier,
+  checkpointEta,
   moneyRate,
   previewMoneyGen,
   nextDriverCost,
@@ -28,11 +31,13 @@ import {
   tick,
 } from "./engine";
 import { eraAt } from "./eras";
+import { moneyGenCost } from "./config";
 import {
   CLIMB_LENGTH,
   EPSILON_ZERO,
   FINAL_RUNG,
   FINITE_LAST,
+  gammaFundamental,
   ordinalRung,
   rungAt,
   rungThreshold,
@@ -162,6 +167,80 @@ describe("generators (4.3, 4.4)", () => {
   });
 });
 
+describe("automatic purchasing", () => {
+  it("fills climb machines before spending the remaining budget", () => {
+    const s = funded({ money: bn(1e30) });
+    const next = autoPurchase(s);
+    expect(next.drivers).toBe(currentRung(next).maxDrivers);
+    expect(next.gens[0]).toBe(1); // best return, not blindly the highest tier
+    expect(next.gens[4]).toBe(0);
+  });
+
+  it("funds only the reached era frontier, never a locked rung", () => {
+    const era = eraAt(1);
+    const s = funded({
+      phase: "era",
+      era: 1,
+      alpha: era.startAlpha,
+      eraGens: era.gens.map(() => 0),
+      money: RICH,
+    });
+    const next = autoPurchase(s);
+    expect(next.eraGens[0]).toBeGreaterThan(0);
+    expect(next.eraGens[1]).toBe(0);
+  });
+
+  it("is a no-op when there is no affordable purchase", () => {
+    const s = initialState(0);
+    expect(autoPurchase(s)).toBe(s);
+  });
+
+  it("chooses the best exact return including lower-tier boosts", () => {
+    const s = funded({ gens: [50, 4, 2, 0, 0] });
+    const tier = bestMoneyGen(s);
+    const selected = previewMoneyGen(s, tier).increase.div(moneyGenCost(tier, s.gens[tier]!));
+    for (let i = 0; i < s.gens.length; i++) {
+      const efficiency = previewMoneyGen(s, i).increase.div(moneyGenCost(i, s.gens[i]!));
+      expect(selected.gte(efficiency)).toBe(true);
+    }
+  });
+
+  it("does not spend on an old unowned node after loading advanced progress", () => {
+    const era = eraAt(1);
+    const s = funded({
+      phase: "era", era: 1, money: RICH,
+      alpha: [era.gens[3]!.increment(ZERO, 1)],
+      eraGens: era.gens.map(() => 0),
+    });
+    expect(eraFrontier(s)).toBe(3);
+    const next = autoPurchase(s);
+    expect(next.eraGens[3]).toBe(1);
+    expect(next.eraGens.slice(0, 3)).toEqual([0, 0, 0]);
+    expect(next.gens.some((count) => count > 0)).toBe(true);
+  });
+
+  it("keeps infrastructure affordable while topping up the era frontier", () => {
+    const era = eraAt(1);
+    const s = funded({
+      phase: "era", era: 1, money: RICH, alpha: era.startAlpha,
+      eraGens: era.gens.map((_, i) => i === 0 ? 1 : 0),
+    });
+    const next = autoPurchase(s);
+    expect(next.eraGens[0]).toBe(2);
+    expect(next.gens.some((count) => count > 0)).toBe(true);
+    expect(next.money.gt(0)).toBe(true);
+  });
+
+  it("estimates the local checkpoint time and detects a missing deployment", () => {
+    expect(checkpointEta(initialState())).toBe(Infinity);
+    expect(checkpointEta(funded({ drivers: 4, rungProgress: 100 }))).toBe(425);
+    const era = eraAt(1);
+    const s = funded({ phase: "era", era: 1, alpha: era.startAlpha,
+      eraGens: era.gens.map((_, i) => i === 0 ? 2 : 0) });
+    expect(checkpointEta(s)).toBe(60);
+  });
+});
+
 describe("the operation ladder (task 10)", () => {
   it("starts on rung 1 with nothing deployed", () => {
     const s = initialState(0);
@@ -194,14 +273,14 @@ describe("the operation ladder (task 10)", () => {
     expect(later).toBeGreaterThan(first);
   });
 
-  it("filling the rung breaks it: notation changes and machines are scrapped", () => {
+  it("filling the rung changes notation and retunes the machines", () => {
     const rung = rungAt(1);
     const s = funded({ drivers: rung.maxDrivers, rungProgress: rung.threshold - 0.05 });
     const r = tick(s);
     expect(r.events.some((e) => e.kind === "mutation")).toBe(true);
     expect(r.state.rung).toBe(2);
     expect(r.state.rungProgress).toBe(0);
-    expect(r.state.drivers).toBe(0); // the old machines cannot compute at the new level
+    expect(r.state.drivers).toBe(rungAt(2).maxDrivers - 1); // the old machines retune; the next cap leaves one upgrade slot
     // the count carries: 加法 ended at its threshold, so 乘法 reads 10·that
     expect(climbValue(r.state)).toBe(`10·${rung.threshold.toLocaleString("en-US")}`);
   });
@@ -229,17 +308,14 @@ describe("the operation ladder (task 10)", () => {
     expect(formatOrd(r.state.alpha)).toBe("ω");
   });
 
-  it("the ω-side ladder climbs ω+n → ω·n → ω^n → ω↑↑n → φ(k,0)", () => {
+  it("the ordinal route follows exact suprema into ω², ω^ω, ε₀ and Γ₀", () => {
     const at = (rung: number, progress: number) => climbValue(funded({ rung, rungProgress: progress }));
     expect(at(9, 0)).toBe("ω");
     expect(at(9, 500)).toBe("ω + 500");
-    // the ω block restarts its count at rung 9, so rung 10 picks it up there
-    expect(at(10, 0)).toBe(`ω·${rungThreshold(9).toLocaleString("en-US")}`);
-    expect(at(11, 0)).toBe(
-      `ω^${(rungThreshold(9) + rungThreshold(10)).toLocaleString("en-US")}`,
-    );
+    expect(at(10, 0)).toBe("ω·2");
+    expect(at(11, 0)).toBe("ω^2");
     expect(at(12, 38)).toBe("ω↑↑40");
-    expect(at(13, 3)).toBe("η₀"); // φ(3,0)
+    expect(at(13, 3)).toBe(formatOrd(gammaFundamental(3)));
   });
 
   it("the ω↑↑n rung still lands strictly below ε₀", () => {
@@ -259,7 +335,7 @@ describe("the operation ladder (task 10)", () => {
     expect(r.state.era).toBe(1);
     expect(r.state.transcends).toBe(1);
     expect(eraOf(r.state).id).toBe("psi");
-    expect(formatOrd(r.state.alpha)).toBe("ψ(Ω^Ω)"); // Γ₀ = Feferman–Schütte
+    expect(formatOrd(r.state.alpha)).toBe("ψ(Ω^Ω)"); // selected handoff code for the Γ₀ route
     expect(r.state.eraGens.length).toBe(eraOf(r.state).gens.length);
     expect(r.state.eraGens.every((g) => g === 0)).toBe(true);
   });
@@ -337,7 +413,7 @@ describe("position & convergence in the era chain (4.5, 5.1, 5.2)", () => {
       alpha: era.startAlpha,
       eraGens: era.gens.map((_, j) => (j === 0 ? 1 : 0)),
     });
-    const r = run(s, FILL + 50, (x) => x.events.some((e) => e.kind === "converged"));
+    const r = run(s, FILL + 50, (x) => x.events.some((e) => e.kind === "checkpoint"));
     expect(r).not.toBeNull();
     expect(equal(r!.state.alpha, [era.gens[1]!.increment(ZERO, 1)])).toBe(true);
   });
@@ -371,18 +447,9 @@ describe("meters", () => {
     expect(omegaApproach(funded({ phase: "era", era: 1 }))).toBe(1);
   });
 
-  it("Ω approach is 0 during the climb and never reaches 1 afterwards", () => {
-    expect(absoluteApproach(initialState(0))).toBe(0);
-    const uncountable = funded({ phase: "era", era: 3, alpha: eraAt(3).startAlpha });
-    expect(absoluteApproach(uncountable)).toBeGreaterThan(0);
-    const deep = funded({ phase: "era", era: 11, alpha: eraAt(11).startAlpha });
-    expect(absoluteApproach(deep)).toBeGreaterThan(absoluteApproach(uncountable));
-    expect(absoluteApproach(deep)).toBeLessThan(1);
-  });
-
   it("era progress runs 0 → 1 across the ladder", () => {
     const era = eraAt(1);
-    // standing on the first rung (the ψ era starts at Γ₀, just below it)
+    // standing on the first rung (the ψ era starts at the Γ₀ route handoff)
     const atStart = funded({
       phase: "era",
       era: 1,
@@ -420,13 +487,13 @@ describe("leaderboard bridge", () => {
   });
 });
 
-describe("axiom modifiers (5.5)", () => {
-  it("axiom cards produce observably different runs", () => {
-    const vl = funded({ phase: "era", era: 1, axiom: "vl", transcends: 1, gens: [1, 0, 0, 0, 0] });
-    const forcing = funded({ phase: "era", era: 1, axiom: "forcing", transcends: 1, gens: [1, 0, 0, 0, 0] });
-    expect(convergeThreshold(vl)).toBe(2400);
-    expect(convergeThreshold(forcing)).toBe(600);
-    expect(moneyRate(vl).gt(moneyRate(forcing))).toBe(true);
+describe("run policies (5.5)", () => {
+  it("policies produce observably different runs", () => {
+    const steady = funded({ phase: "era", era: 1, policy: "steady", transcends: 1, gens: [1, 0, 0, 0, 0] });
+    const sprint = funded({ phase: "era", era: 1, policy: "sprint", transcends: 1, gens: [1, 0, 0, 0, 0] });
+    expect(convergeThreshold(steady)).toBe(2400);
+    expect(convergeThreshold(sprint)).toBe(600);
+    expect(moneyRate(steady).gt(moneyRate(sprint))).toBe(true);
   });
 
   it("transcends accelerate income", () => {

@@ -1,5 +1,5 @@
-/* rank(): a monotone value -> magnitude map used by the economy bridge
- * g(alpha) and the era approach meters.
+/* rank(): a hand-authored monotone ordinal encoding used for leaderboard
+ * sorting. It is not a mathematical ordinal rank or a magnitude embedding.
  *
  * Monotone for every value one era can produce (coefficients there stay
  * far below the 2^53 cap, exponents below the authored ladders). Scales:
@@ -19,8 +19,8 @@ const COEF_SCALE = 256;
 const EPS_BASE = 2 ** 16;
 const OMEGA_BASE = 2 ** 20;
 const CARD_BASE = 2 ** 44;
-// one large-cardinal tier ≈ +2.5 bridge levels, so each transcendence into a
-// new axiom tier multiplies income by roughly 2^2.5 ≈ 5.7×
+// Keep successive catalog tiers visibly separated in leaderboard scores. This
+// spacing is a comparison convention, not an income multiplier or theorem.
 const CARD_STEP = 2 ** 45;
 
 function headRank(h: Head): number {
@@ -38,7 +38,7 @@ function headRank(h: Head): number {
   }
 }
 
-/** Monotone magnitude of an ordinal value (double precision). */
+/** Monotone game score of an ordinal value (double precision). */
 export function rank(a: Ord): number {
   if (a.length === 0) return 0;
   const t: Term = a[0]!;
@@ -50,7 +50,7 @@ export function rank(a: Ord): number {
   return r;
 }
 
-/** The economy bridge exponent: multiplier = 2^bridgeLevel(alpha). */
+/** Legacy score bridge exponent; retained for compatibility, not used by economy. */
 export const BRIDGE_C = 4;
 
 export function bridgeLevel(a: Ord): number {

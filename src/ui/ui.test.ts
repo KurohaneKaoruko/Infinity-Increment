@@ -28,6 +28,7 @@ describe("formatting", () => {
     expect(formatMoney(bn("1234.5"))).toBe("1,234");
     expect(formatMoney(bn("1e15"))).toBe("1e15");
     expect(formatMoney(bn("1.5e45"))).toBe("1.5e45");
+    expect(formatMoney(bn("9.9999e49"))).toBe("1e50");
   });
 
   it("offline duration formats readably", () => {
@@ -43,26 +44,31 @@ describe("the climb screen renders", () => {
     vi.restoreAllMocks();
   });
 
-  it("shows the operation ladder, the current rung and the machine button", () => {
+  it("shows the current goal and compact purchase controls", () => {
     // bootGame() starts timers and probes the leaderboard; neither is wanted here
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("offline"));
     const host = document.createElement("div");
     document.body.appendChild(host);
     const dispose = render(() => App(), host);
     const text = host.textContent ?? "";
-    expect(text).toContain("INFINITY://terminal");
-    expect(text).toContain("运算阶梯");
+    expect(text).toContain("INFINITY");
+    expect(text).toContain("主线");
     expect(text).toContain("加法");
-    expect(text).toContain("部署机器");
-    // every rung of the ladder is listed somewhere on the page
-    for (const r of CLIMB_RUNGS) expect(text).toContain(r.name);
+    expect(text).toContain("部署 1 台");
+    expect(text).toContain("下一节点");
+
+    const routeTab = Array.from(host.querySelectorAll("button")).find((button) => button.textContent === "路线");
+    expect(routeTab).toBeDefined();
+    routeTab!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    const routeText = host.textContent ?? "";
+    for (const r of CLIMB_RUNGS) expect(routeText).toContain(r.name);
 
     const shopTab = Array.from(host.querySelectorAll("button")).find((button) => button.textContent === "商店");
     expect(shopTab).toBeDefined();
     shopTab!.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     const shopText = host.textContent ?? "";
-    expect(shopText).toContain("实际 +");
-    expect(shopText).toContain("每次点击");
+    expect(shopText).toContain("检查点");
+    expect(shopText).toContain("升级手算");
     dispose();
   });
 });
